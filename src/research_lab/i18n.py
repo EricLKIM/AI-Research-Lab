@@ -1,0 +1,161 @@
+"""
+i18n.py
+
+이 앱은 두 가지 서로 다른 "언어" 개념을 구분해서 다룬다.
+
+1. 출력 언어 (output_language) — 사용자가 자유롭게 지정하는, 실제 다이제스트
+   *내용*(트렌드 요약, 하이라이트 설명 등)이 작성될 언어. "한국어", "English",
+   "日本語", "中文" 등 어떤 언어든 입력할 수 있고, GPT에게 그 언어로 작성하라고
+   지시하는 데 쓰인다 (analyzer 쪽에서 사용).
+
+2. 틀 언어 (UI lang) — 앱 인터페이스와, 내보내기 파일에 들어가는 고정된 틀
+   문구(섹션 제목 등)의 언어. 이건 한국어("ko")/English("en") 두 가지만
+   지원한다. 출력 언어가 한국어 계열일 때만 "ko"를 쓰고, 그 외에는(영어를
+   지정해도, 일본어/중국어 등 우리가 UI를 만들어두지 않은 언어를 지정해도)
+   항상 "en"으로 fallback한다.
+
+resolve_ui_lang()이 1번 값을 받아서 2번 값을 계산해준다.
+"""
+
+from __future__ import annotations
+
+_KOREAN_ALIASES = {
+    "ko", "kr", "korean", "korean(ko)", "한국어", "국문", "한글",
+}
+
+# 설정 화면에 미리 보여줄 출력 언어 후보 (자유 입력도 가능하게 combobox는 editable로 둔다).
+OUTPUT_LANGUAGE_PRESETS = [
+    "한국어", "English", "日本語", "中文", "Español", "Français", "Deutsch", "Tiếng Việt",
+]
+
+DEFAULT_OUTPUT_LANGUAGE = "한국어"
+
+
+# Google 검색용 언어/지역 프로필. 출력 언어와 검색 언어를 최대한 일치시키고,
+# 지역 기반 결과가 필요한 경우 Google의 gl/hl/lr 파라미터에 전달한다.
+GOOGLE_SEARCH_PROFILES = {
+    "한국어": {"lang": "ko", "country": "KR", "lr": "lang_ko"},
+    "ko": {"lang": "ko", "country": "KR", "lr": "lang_ko"},
+    "English": {"lang": "en", "country": "US", "lr": "lang_en"},
+    "english": {"lang": "en", "country": "US", "lr": "lang_en"},
+    "日本語": {"lang": "ja", "country": "JP", "lr": "lang_ja"},
+    "中文": {"lang": "zh-CN", "country": "CN", "lr": "lang_zh-CN"},
+    "Español": {"lang": "es", "country": "ES", "lr": "lang_es"},
+    "Français": {"lang": "fr", "country": "FR", "lr": "lang_fr"},
+    "Deutsch": {"lang": "de", "country": "DE", "lr": "lang_de"},
+    "Tiếng Việt": {"lang": "vi", "country": "VN", "lr": "lang_vi"},
+}
+
+GOOGLE_SEARCH_PROFILES_BY_CODE = {
+    "ko": {"lang": "ko", "country": "KR", "lr": "lang_ko"},
+    "en": {"lang": "en", "country": "US", "lr": "lang_en"},
+    "ja": {"lang": "ja", "country": "JP", "lr": "lang_ja"},
+    "zh": {"lang": "zh-CN", "country": "CN", "lr": "lang_zh-CN"},
+    "zh-cn": {"lang": "zh-CN", "country": "CN", "lr": "lang_zh-CN"},
+    "es": {"lang": "es", "country": "ES", "lr": "lang_es"},
+    "fr": {"lang": "fr", "country": "FR", "lr": "lang_fr"},
+    "de": {"lang": "de", "country": "DE", "lr": "lang_de"},
+    "vi": {"lang": "vi", "country": "VN", "lr": "lang_vi"},
+}
+
+
+def google_search_profile(output_language: str | None) -> dict:
+    """출력 언어에 맞는 Google Search 언어/지역 설정을 반환한다.
+
+    자유 입력 언어는 정확한 지역을 자동 판별할 수 없으므로 English/US로
+    fallback한다. UI에서 지원하는 언어와 ISO 코드 입력은 정확히 매핑한다.
+    """
+    raw = (output_language or DEFAULT_OUTPUT_LANGUAGE).strip()
+    key = raw.lower()
+    return dict(
+        GOOGLE_SEARCH_PROFILES.get(raw)
+        or GOOGLE_SEARCH_PROFILES_BY_CODE.get(key)
+        or GOOGLE_SEARCH_PROFILES_BY_CODE.get(key.split("-")[0])
+        or GOOGLE_SEARCH_PROFILES_BY_CODE["en"]
+    )
+
+
+def resolve_ui_lang(output_language: str | None) -> str:
+    """출력 언어 문자열 → 틀 언어("ko" 또는 "en"). 한국어 계열이 아니면 전부 "en"."""
+    normalized = (output_language or "").strip().lower()
+    return "ko" if normalized in _KOREAN_ALIASES else "en"
+
+
+# ── 내보내기 파일에 들어가는 고정 틀 문구 (obsidian/markdown/text/html/docx 공용) ──
+
+FILE_STRINGS = {
+    "ko": {
+        "digest_title": "AI 연구 다이제스트",
+        "topic_title_fmt": "{topic} 리서치 다이제스트",
+        "generated_at": "생성 시각",
+        "trend_summary_heading": "핵심 트렌드 요약",
+        "topic_trend_heading": "핵심 동향",
+        "highlights_heading": "주목할 동향 TOP 3",
+        "topic_highlights_heading": "주요 기사",
+        "research_implications_heading": "연구 시사점",
+        "ip_perspective_heading": "IP / 특허법 관점",
+        "related_keywords_heading": "관련 키워드",
+        "topic_takeaways_heading": "시사점",
+        "error_heading": "오류",
+        "source_label": "출처",
+        "link_label": "링크",
+        "auto_generated_note": "자동 생성",
+        "auto_generated_body": "AI Times + HuggingFace 트렌딩 데이터를 GPT가 분석한 결과입니다.",
+        "kg_suggestion_heading": "Knowledge Graph 추가 제안",
+        "kg_suggestion_body": "아래 노드를 Knowledge Graph에 추가하려면:",
+        "kg_id_label": "ID",
+        "kg_content_label": "내용",
+        "kg_tags_label": "태그",
+        "error_occurred_note": "오류 발생",
+        "digest_tags": ["AI동향", "연구다이제스트", "자동생성"],
+        "topic_tags": ["리서치", "자동생성"],
+    },
+    "en": {
+        "digest_title": "AI Research Digest",
+        "topic_title_fmt": "{topic} Research Digest",
+        "generated_at": "Generated at",
+        "trend_summary_heading": "Key Trend Summary",
+        "topic_trend_heading": "Key Trends",
+        "highlights_heading": "Top 3 Highlights",
+        "topic_highlights_heading": "Top Articles",
+        "research_implications_heading": "Research Implications",
+        "ip_perspective_heading": "IP / Patent Law Perspective",
+        "related_keywords_heading": "Related Keywords",
+        "topic_takeaways_heading": "Key Takeaways",
+        "error_heading": "Error",
+        "source_label": "Source",
+        "link_label": "Link",
+        "auto_generated_note": "Auto-generated",
+        "auto_generated_body": "Generated by GPT analysis of AI Times + HuggingFace trending data.",
+        "kg_suggestion_heading": "Suggested Knowledge Graph Additions",
+        "kg_suggestion_body": "To add these nodes to the Knowledge Graph, run:",
+        "kg_id_label": "ID",
+        "kg_content_label": "Content",
+        "kg_tags_label": "Tags",
+        "error_occurred_note": "An error occurred",
+        "digest_tags": ["ai-trends", "research-digest", "auto-generated"],
+        "topic_tags": ["research", "auto-generated"],
+    },
+}
+
+
+def file_strings(lang: str) -> dict:
+    return FILE_STRINGS.get(lang, FILE_STRINGS["en"])
+
+
+def language_instruction(output_language: str | None) -> str:
+    """GPT 시스템 프롬프트 끝에 덧붙일, 응답 언어를 지정하는 지시문을 만든다.
+
+    "id"(Knowledge Graph 식별자), "date", "url" 처럼 형식이 고정된 필드까지
+    번역해버리면 안 되므로, 그런 필드는 원래 형식을 유지하도록 명시적으로 예외를 둔다.
+    """
+    lang = (output_language or DEFAULT_OUTPUT_LANGUAGE).strip() or DEFAULT_OUTPUT_LANGUAGE
+    return (
+        f"\n\n중요: 위 JSON의 키(key) 이름과 구조는 그대로 유지하세요. "
+        f"'id'(영어/언더스코어 식별자), 'date'(YYYY-MM-DD), 'url' 처럼 형식이 정해진 값은 "
+        f"원래 형식과 언어를 그대로 유지하고 절대 번역하지 마세요. "
+        f"그 외 요약·설명·제목처럼 자유롭게 서술하는 텍스트 값은 반드시 다음 언어로 작성하세요: {lang}. "
+        f"추천 검색어, 검색 쿼리, 관련 키워드, 후속 조사 주제, 태그처럼 사용자가 검색/탐색에 직접 사용하는 제안도 반드시 {lang}로 작성하세요. "
+        f"사용자가 English를 선택했다면 한국어 검색어를 생성하지 말고 자연스러운 영어 검색어를 사용하세요. "
+        f"검색어에 고유명사·제품명·기관명 등 공식 명칭이 있는 경우에는 해당 공식 명칭을 유지하되, 그 주변의 설명과 검색 의도는 {lang}로 작성하세요."
+    )

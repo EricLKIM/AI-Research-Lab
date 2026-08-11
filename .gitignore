@@ -1,0 +1,29 @@
+@"
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+*.py[cod]
+
+*.log
+*.tmp
+
+.vscode/
+.idea/
+
+build/
+dist/
+*.egg-info/
+
+.DS_Store
+Thumbs.db
+"@ | Set-Content -Encoding utf8 .gitignore
+# Local application state
+/gui_settings.json
+/topics_favorites.json
+
+# Inno Setup generated uninstall files
+/unins000.exe
+/unins000.dat
