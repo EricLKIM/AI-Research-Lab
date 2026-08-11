@@ -408,7 +408,7 @@ For security-related issues, please follow the project's security policy.
 
 ## 📄 License
 
-License information will be added as the project reaches its first formal public release.
+AI Research Lab is licensed under the [MIT License](LICENSE).
 
 ---
 
