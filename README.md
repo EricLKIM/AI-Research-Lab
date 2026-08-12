@@ -6,6 +6,8 @@ AI Research Lab is an AI-powered research platform designed to collect informati
 
 It combines **topic research, source evaluation, trend analysis, emerging-signal detection, rumor-oriented research, and Obsidian integration** into a single research workflow.
 
+[Download for Windows](https://github.com/EricLKIM/AI-Research-Lab/releases/latest)
+
 ---
 
 ## ✨ What Makes AI Research Lab Different?
@@ -21,6 +23,8 @@ Instead of simply returning a collection of search results, the system attempts 
 * **Rumors** — weakly verified or opinion-driven information that may still be worth monitoring
 
 This allows users to explore not only **what is being reported**, but also **how much confidence should be placed in it**.
+
+
 
 ---
 
