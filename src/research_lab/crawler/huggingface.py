@@ -125,7 +125,7 @@ class HuggingFaceCrawler:
                 results.append(model.to_dict())
         return results
 
-    # ── 웹 파싱 fallback ──────────────────────────────────────────────────
+        # ── HTML parsing fallback ────────────────────────────────────────────
 
     def _fetch_from_web(self, limit: int) -> list[dict]:
         """HuggingFace 모델 목록 페이지 파싱."""
@@ -140,42 +140,42 @@ class HuggingFaceCrawler:
         results = []
         seen: set[str] = set()
 
-        # 모델 카드 링크 추출 (패턴: /username/modelname)
+        # Extract model-card links (pattern: /username/modelname).
         for a in soup.find_all("a", href=True):
             href = a.get("href", "")
-            # HF 모델 URL 패턴: /org/model (슬래시 하나)
+            # Hugging Face model URL pattern: /org/model (one slash).
             if not re.match(r"^/[^/]+/[^/]+$", href):
                 continue
             if href in seen:
                 continue
-            # UI/nav 링크 제외
+            # Exclude UI and navigation links.
             if any(skip in href for skip in ["/models", "/datasets", "/spaces",
                                               "/docs", "/blog", "/settings"]):
                 continue
             seen.add(href)
 
             text = a.get_text(separator=" ", strip=True)
-            # 모델명 포함 여부 확인 (org/model 형식)
+            # Verify the org/model naming shape.
             model_id = href.lstrip("/")
             if "/" not in model_id:
                 continue
 
-            # 부모 요소에서 메타 정보 추출
+            # Extract metadata from the parent element.
             parent = a.find_parent(["article", "li", "div"])
             task, date, params = "", "", ""
             if parent:
                 full_text = parent.get_text(separator=" ", strip=True)
-                # task 추출 (Text Generation, Image-to-Text 등)
+            # Extract task metadata (for example, Text Generation or Image-to-Text).
                 task_match = re.search(
                     r"(Text Generation|Image-Text-to-Text|Text-to-Image|"
                     r"Text-to-Speech|Text-to-Video|Image-to-Image|Any-to-Any)",
                     full_text
                 )
                 task = task_match.group(1) if task_match else ""
-                # 파라미터 추출 (7B, 70B 등)
+            # Extract parameter counts (for example, 7B or 70B).
                 param_match = re.search(r"(\d+(?:\.\d+)?[BKMT])\b", full_text)
                 params = param_match.group(1) if param_match else ""
-                # 날짜
+            # Date
                 date_match = re.search(r"Updated (.+?)(?:•|$)", full_text)
                 date = date_match.group(1).strip() if date_match else ""
 

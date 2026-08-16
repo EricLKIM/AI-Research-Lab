@@ -26,8 +26,8 @@ DEFAULT_FAVORITES_BY_LANG = {
     "vi": ["Kinh tế", "Chất bán dẫn", "Bất động sản"],
 }
 
-# 구버전 기본값 및 언어별 기본값을 구분해 두면, 사용자가 직접 추가한 항목을
-# 실수로 덮어쓰지 않으면서 언어 변경 시 기본 목록만 자동 전환할 수 있다.
+# Keep legacy defaults separate from language-specific defaults so language
+# changes can update only defaults without overwriting user-added topics.
 LEGACY_DEFAULT_FAVORITES = ["경제", "반도체", "부동산"]
 _KNOWN_DEFAULT_SETS = {
     tuple(items) for items in DEFAULT_FAVORITES_BY_LANG.values()

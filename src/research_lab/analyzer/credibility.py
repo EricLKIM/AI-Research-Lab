@@ -103,7 +103,7 @@ class CredibilityScorer:
             )
             raw = response.choices[0].message.content or ""
             data = json.loads(raw)
-        except Exception as e:  # noqa: BLE001 — 평가 실패는 fail-open으로 처리
+        except Exception as e:  # noqa: BLE001 — fail open when scoring fails
             return CredibilityResult(error=str(e))
 
         scores: dict[int, int] = {}

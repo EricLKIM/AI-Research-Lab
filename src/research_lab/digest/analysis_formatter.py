@@ -42,6 +42,28 @@ def _markdown(result: dict, topic: str, date: str, lang: str) -> str:
         for x in result["contradictions"]:
             lines.append(f"- **{x.get('topic','')}** — {x.get('summary','')} (sources: {x.get('source_indices',[])})")
         lines.append("")
+    if result.get("cross_topic_evidence"):
+        lines += ["## Cross-topic evidence"]
+        for row in result["cross_topic_evidence"]:
+            lines.append(
+                f"- [{row.get('match_type','direct')}] {row.get('topic','')} / {row.get('tag','')}: "
+                f"{row.get('summary','')} (confidence: {row.get('confidence', 0)}%)"
+            )
+        lines.append("")
+    if result.get("time_series"):
+        series = result["time_series"]
+        lines += ["## Time-series trend", f"- Period: {series.get('period_start')} to {series.get('period_end')} ({series.get('period_days')} days)"]
+        for signal in series.get("signals", []):
+            if signal.get("direction") != "stable":
+                lines.append(f"- {signal.get('tag')}: {signal.get('direction')} ({signal.get('before')} → {signal.get('recent')})")
+        lines.append("")
+    if result.get("data_quality"):
+        quality = result["data_quality"]
+        lines += ["## Data quality", f"- Snapshots: {quality.get('snapshot_count', 0)} | Articles: {quality.get('article_count', 0)} | Independent domains: {quality.get('independent_domain_count', 0)}", f"- Duplicate rate: {quality.get('duplicate_rate', 0):.1%} | Time-unknown rate: {quality.get('time_unknown_rate', 0):.1%}", f"- Coverage: {quality.get('coverage_note', 'unknown')}", ""]
+    if result.get("alerts"):
+        lines += ["## Alerts"]
+        lines.extend(f"- {alert.get('message', '')}" for alert in result["alerts"])
+        lines.append("")
     lines += [f"## {h['sources']}"]
     for i, s in enumerate(result.get("sources", [])):
         lines.append(f"### [{i}] {s.get('title','')}")
@@ -50,6 +72,23 @@ def _markdown(result: dict, topic: str, date: str, lang: str) -> str:
         if s.get("url"): lines.append(f"- URL: {s['url']}")
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def _obsidian_markdown(result: dict, topic: str, date: str, lang: str) -> str:
+    """Give Analysis notes the same Obsidian-friendly metadata shape as research notes."""
+    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    frontmatter = [
+        "---",
+        f"date: {date}",
+        f"topic: {json.dumps(topic, ensure_ascii=False)}",
+        "tags:",
+        "  - trend-analysis",
+        *[f"  - {json.dumps(str(tag), ensure_ascii=False)}" for tag in result.get("analysis_tags", [])],
+        f"generated_at: {json.dumps(generated_at)}",
+        "---",
+        "",
+    ]
+    return "\n".join(frontmatter) + _markdown(result, topic, date, lang)
 
 def _text(result: dict, topic: str, date: str, lang: str) -> str:
     return _markdown(result, topic, date, lang).replace("# ", "").replace("## ", "[ ").replace("### ", "- ")
@@ -64,7 +103,10 @@ def save_analysis(result: dict, topic: str, date: str, vault_dir: Path, fmt: str
     if fmt not in EXTENSIONS: raise ValueError(f"Unsupported export format: {fmt}")
     out_dir = Path(vault_dir) / TOPICS_DIR / _slugify(topic)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{date}_analysis.{EXTENSIONS[fmt]}"
+    # Analyses can be run several times in a day; retain each human-readable
+    # result instead of overwriting the earlier one.
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = out_dir / f"{timestamp}_analysis.{EXTENSIONS[fmt]}"
     if fmt == "json":
         path.write_text(json.dumps(_data(result, topic, date), ensure_ascii=False, indent=2), encoding="utf-8")
     elif fmt == "docx":
@@ -81,5 +123,6 @@ def save_analysis(result: dict, topic: str, date: str, vault_dir: Path, fmt: str
         doc.save(path)
     elif fmt == "html": path.write_text(_html(result, topic, date, lang), encoding="utf-8")
     elif fmt == "text": path.write_text(_text(result, topic, date, lang), encoding="utf-8")
+    elif fmt == "obsidian": path.write_text(_obsidian_markdown(result, topic, date, lang), encoding="utf-8")
     else: path.write_text(_markdown(result, topic, date, lang), encoding="utf-8")
     return path

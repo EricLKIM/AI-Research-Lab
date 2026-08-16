@@ -67,7 +67,7 @@ class DigestFormatter:
             f"---\n"
         )
 
-        # ── 제목 ──────────────────────────────────────────────────────────
+        # ── Title ──────────────────────────────────────────────────────────
         sections.append(f"# 🤖 {s['digest_title']} — {r.date}\n")
         sections.append(
             f"> [!info] {s['auto_generated_note']}\n"
@@ -75,14 +75,14 @@ class DigestFormatter:
             f"> {s['generated_at']}: {now}\n"
         )
 
-        # ── 트렌드 요약 ───────────────────────────────────────────────────
+        # ── Trend summary ──────────────────────────────────────────────────
         if r.trend_summary:
             sections.append(f"## 📊 {s['trend_summary_heading']}\n")
             for i, trend in enumerate(r.trend_summary, 1):
                 sections.append(f"{i}. {trend}")
             sections.append("")
 
-        # ── 주목할 항목 ───────────────────────────────────────────────────
+        # ── Highlights ─────────────────────────────────────────────────────
         if r.highlights:
             sections.append(f"## 🔥 {s['highlights_heading']}\n")
             for h in r.highlights:
@@ -98,14 +98,14 @@ class DigestFormatter:
                     sections.append(f"\n{why}\n")
             sections.append("")
 
-        # ── 연구 시사점 ───────────────────────────────────────────────────
+        # ── Research implications ──────────────────────────────────────────
         if r.research_implications:
             sections.append(f"## 🔬 {s['research_implications_heading']}\n")
             for impl in r.research_implications:
                 sections.append(f"- {impl}")
             sections.append("")
 
-        # ── IP/특허 관점 ──────────────────────────────────────────────────
+        # ── IP/patent perspective ──────────────────────────────────────────
         if r.ip_perspective:
             sections.append(f"## ⚖️ {s['ip_perspective_heading']}\n")
             sections.append(
@@ -114,7 +114,7 @@ class DigestFormatter:
             )
             sections.append("")
 
-        # ── Knowledge Graph 노드 제안 ─────────────────────────────────────
+        # ── Suggested Knowledge Graph nodes ────────────────────────────────
         if r.suggested_nodes:
             sections.append(f"## 🧠 {s['kg_suggestion_heading']}\n")
             sections.append(
@@ -135,7 +135,7 @@ class DigestFormatter:
                     sections.append(f"- **{s['kg_tags_label']}**: {node_tag_str}")
                 sections.append("")
 
-        # ── 오류 표시 ─────────────────────────────────────────────────────
+        # ── Error display ──────────────────────────────────────────────────
         if r.error:
             sections.append(f"## ⚠️ {s['error_heading']}\n")
             sections.append(
@@ -143,7 +143,7 @@ class DigestFormatter:
                 f"> {r.error}\n"
             )
 
-        # ── 태그 footer ───────────────────────────────────────────────────
+        # ── Tag footer ─────────────────────────────────────────────────────
         sections.append("---")
         sections.append(" ".join(f"#{t}" for t in s["digest_tags"]))
 

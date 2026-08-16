@@ -21,6 +21,8 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import uuid
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk, font as tkfont
 
@@ -30,10 +32,17 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from research_lab.utils.favorites import TopicFavorites  # noqa: E402
 from research_lab.digest.topic_formatter import _slugify  # noqa: E402
 from research_lab.i18n import resolve_ui_lang, OUTPUT_LANGUAGE_PRESETS, DEFAULT_OUTPUT_LANGUAGE  # noqa: E402
+from research_lab.crawler.hacker_news import HackerNewsCrawler  # noqa: E402
+from research_lab.crawler.gdelt import GdeltCrawler  # noqa: E402
+from research_lab.crawler.reddit import RedditCrawler  # noqa: E402
+from research_lab.crawler.x import XCrawler  # noqa: E402
+from research_lab.crawler.youtube import YouTubeCrawler  # noqa: E402
+from research_lab.pending_backfills import pending_days  # noqa: E402
 
 SETTINGS_PATH = PROJECT_ROOT / "gui_settings.json"
 ENV_PATH = PROJECT_ROOT / ".env"
 FAVORITES_PATH = PROJECT_ROOT / "topics_favorites.json"
+DATA_VAULT_DIR = PROJECT_ROOT / "vault"
 
 MODEL_PRESETS = ["gpt-5.4-nano", "gpt-5.4-mini", "gpt-4.1-nano"]
 EXPORT_FORMAT_CHOICES = ["obsidian", "markdown", "text", "json", "html", "docx"]
@@ -48,14 +57,32 @@ DEFAULT_SETTINGS = {
     "credibility_threshold": 40,
     "output_language": DEFAULT_OUTPUT_LANGUAGE,
     "gossip_ratio": 20,
+    "community_sources": {"reddit": True, "x": False, "youtube": False, "hackernews": True, "gdelt": True},
+    "gdelt_source_language": "global",
+    "gdelt_region_profile": "auto",
+    "latest_news_priority": "google_rss",
+    "google_rss_region_profile": "balanced",
+    "new_topic_backfill_days": 7,
+    "new_topic_backfill_interval_days": 1,
+    "backfill_daily_article_count": 5,
+    "backfill_method": "doc_api",
+    "dump_cache_policy": "persistent",
+    "dump_scan_mode": "sample",
+    "auto_collection_times": ["09:00"],
+    "include_time_unknown": False,
     "analysis_reliability_weight": 50,
     "analysis_freshness_weight": 30,
     "analysis_early_signal_weight": 20,
+    "analysis_period_days": 30,
+    "analysis_alert_emerging": True,
+    "analysis_alert_rising": True,
+    "analysis_alert_contradictions": True,
+    "analysis_alert_data_quality": True,
 }
 
 
-# ── 다국어 문자열 ─────────────────────────────────────────────────────────
-# 언어 변경은 다음 재시작부터 적용된다 (설정 탭에서 바꾸고 저장하면 안내 메시지가 뜬다).
+# ── Localized strings ──────────────────────────────────────────────────────
+# Language changes apply after the next restart; saving settings shows a notice.
 
 STRINGS = {
     "ko": {
@@ -63,6 +90,7 @@ STRINGS = {
         "tab_digest": "AI 다이제스트",
         "tab_topic": "주제 리서치",
         "tab_settings": "설정",
+        "tab_advanced": "고급 설정",
         "tab_analysis": "분석",
         "analysis_intro": "Topic Research에서 수집한 최신 자료를 재사용하여 신뢰도·최신성·독립성을 반영한 동향 분석을 수행합니다.",
         "analysis_topic_label": "분석할 주제",
@@ -72,6 +100,7 @@ STRINGS = {
         "analysis_reliability": "신뢰도",
         "analysis_freshness": "최신성",
         "analysis_signal": "초기 신호",
+        "analysis_period": "시계열 분석 기간",
         "analysis_history": "동향 변화 추적",
         "analysis_history_hint": "반복 분석 결과를 시간순으로 비교합니다. Rumor → Emerging Signal → Confirmed Trend 승격을 추적할 수 있습니다.",
         "analysis_no_history": "아직 분석 이력이 없습니다. Analysis를 실행하면 여기에 변화가 표시됩니다.",
@@ -108,6 +137,36 @@ STRINGS = {
         "source_balance_low": "주요 언론/뉴스 중심으로 검색합니다.",
         "source_balance_mid": "뉴스와 개인·커뮤니티 자료를 섞습니다.",
         "source_balance_high": "Google 일반 검색에서 블로그·커뮤니티·토론 자료를 적극적으로 찾습니다. 소문은 사실로 간주하지 않습니다.",
+        "settings_community_sources": "고급 설정 — 커뮤니티 수집원",
+        "settings_reddit": "Reddit (OAuth 승인 필요)",
+        "settings_x": "X (Bearer Token 필요)",
+        "settings_youtube": "YouTube (API Key 필요)",
+        "settings_hackernews": "Hacker News (AI·반도체 주제만, API Key 불필요)",
+        "settings_gdelt": "GDELT DOC (뉴스·백필, API Key 불필요)",
+        "settings_gdelt_language": "GDELT 원문 언어 (global / korean / english)",
+        "settings_gdelt_region": "GDELT 지역 분산 (auto / global_even / country_focus)",
+        "settings_latest_news_priority": "최신 뉴스 우선 수집원 (google_rss / gdelt)",
+        "settings_google_rss_region": "Google RSS 국가 분산 (balanced / local_only)",
+        "settings_reddit_id": "Reddit Client ID",
+        "settings_reddit_secret": "Reddit Client Secret",
+        "settings_reddit_agent": "Reddit User-Agent",
+        "settings_x_token": "X Bearer Token",
+        "settings_youtube_key": "YouTube API Key",
+        "settings_include_time_unknown": "시간을 확인할 수 없는 커뮤니티 자료도 사용",
+        "settings_test_connections": "활성 수집원 연결 테스트",
+        "settings_test_running": "연결 확인 중...",
+        "settings_backfill_days": "새 주제 백필 전체 기간 (일)",
+        "settings_backfill_interval_days": "새 주제 백필 간격 (일)",
+        "settings_backfill_daily_count": "백필 일일 목표 기사 수",
+        "settings_backfill_method": "백필 방식 (doc_api / gdelt_dump)",
+        "settings_dump_cache_policy": "덤프 캐시 (persistent / temporary)",
+        "settings_dump_scan_mode": "덤프 스캔 (sample: UTC 5구간 균등 / full: 하루 전체)",
+        "settings_auto_times": "자동 수집 시각 (최대 3개, HH:MM)",
+        "settings_auto_register": "자동 수집 등록/변경",
+        "settings_auto_unregister": "자동 수집 해제",
+        "msg_backfill_title": "새 주제 백필",
+        "msg_backfill_body": "이 주제에는 아직 수집 이력이 없습니다. 최근 {days}일의 GDELT 데이터를 먼저 백필할까요? 완료 후 최신 주제 리서치가 자동으로 이어집니다.",
+        "msg_backfill_disabled": "GDELT DOC가 꺼져 있어 새 주제 백필은 실행하지 않습니다. 고급 설정에서 GDELT DOC를 켠 뒤 다시 실행하세요.",
         "settings_language": "출력 언어 (다이제스트 내용)",
         "settings_language_hint": "자유롭게 입력 가능 (예: English, 日本語, 中文). 앱 화면/파일 틀 문구는 이 값이 한국어일 때만 한국어이고, 그 외에는 항상 English로 표시됩니다. 변경 후 앱을 다시 시작해야 적용됩니다.",
         "settings_save_btn": "저장",
@@ -138,6 +197,7 @@ STRINGS = {
         "tab_digest": "AI Digest",
         "tab_topic": "Topic Research",
         "tab_settings": "Settings",
+        "tab_advanced": "Advanced",
         "tab_analysis": "Analysis",
         "analysis_intro": "Reuses the latest Topic Research sources and analyzes trends using reliability, freshness, evidence, and source independence.",
         "analysis_topic_label": "Topic to analyze",
@@ -147,6 +207,7 @@ STRINGS = {
         "analysis_reliability": "Reliability",
         "analysis_freshness": "Freshness",
         "analysis_signal": "Early signal",
+        "analysis_period": "Time-series period",
         "analysis_history": "Trend evolution",
         "analysis_history_hint": "Compare repeated analyses over time and track Rumor → Emerging Signal → Confirmed Trend transitions.",
         "analysis_no_history": "No analysis history yet. Run Analysis to populate this timeline.",
@@ -185,6 +246,36 @@ STRINGS = {
         "source_balance_low": "Primarily searches established news sources.",
         "source_balance_mid": "Mixes news with personal and community sources.",
         "source_balance_high": "Actively searches Google Web for blogs, communities, and discussions. Rumors are not treated as facts.",
+        "settings_community_sources": "Advanced — community sources",
+        "settings_reddit": "Reddit (OAuth approval required)",
+        "settings_x": "X (Bearer Token required)",
+        "settings_youtube": "YouTube (API Key required)",
+        "settings_hackernews": "Hacker News (AI/semiconductor topics only; no API key)",
+        "settings_gdelt": "GDELT DOC (news/backfill; no API key)",
+        "settings_gdelt_language": "GDELT source language (global / korean / english)",
+        "settings_gdelt_region": "GDELT regional balance (auto / global_even / country_focus)",
+        "settings_latest_news_priority": "Latest-news priority (google_rss / gdelt)",
+        "settings_google_rss_region": "Google RSS regional mix (balanced / local_only)",
+        "settings_reddit_id": "Reddit Client ID",
+        "settings_reddit_secret": "Reddit Client Secret",
+        "settings_reddit_agent": "Reddit User-Agent",
+        "settings_x_token": "X Bearer Token",
+        "settings_youtube_key": "YouTube API Key",
+        "settings_include_time_unknown": "Include community items with an unknown time",
+        "settings_test_connections": "Test enabled source connections",
+        "settings_test_running": "Checking connections...",
+        "settings_backfill_days": "New-topic backfill total period (days)",
+        "settings_backfill_interval_days": "New-topic backfill interval (days)",
+        "settings_backfill_daily_count": "Backfill daily target articles",
+        "settings_backfill_method": "Backfill method (doc_api / gdelt_dump)",
+        "settings_dump_cache_policy": "Dump cache (persistent / temporary)",
+        "settings_dump_scan_mode": "Dump scan (sample: balanced 5 UTC windows / full: all daily blocks)",
+        "settings_auto_times": "Auto-collection times (up to 3, HH:MM)",
+        "settings_auto_register": "Register/update auto collection",
+        "settings_auto_unregister": "Remove auto collection",
+        "msg_backfill_title": "New topic backfill",
+        "msg_backfill_body": "This topic has no collection history. Backfill the last {days} days from GDELT first? The latest Topic Research will run automatically afterwards.",
+        "msg_backfill_disabled": "New-topic backfill is disabled because GDELT DOC is disabled. Enable it in Advanced settings and run again.",
         "settings_language": "Output language (digest content)",
         "settings_language_hint": "Type any language (e.g. English, 日本語, 中文). The app UI and file template text stay Korean only when this is Korean; otherwise they're always in English. Restart the app after changing this.",
         "settings_save_btn": "Save",
@@ -219,7 +310,7 @@ def tr(lang: str, key: str, **kwargs) -> str:
     return text.format(**kwargs) if kwargs else text
 
 
-# ── 설정 파일 / .env 읽고 쓰기 ─────────────────────────────────────────────
+# ── Settings and .env I/O ──────────────────────────────────────────────────
 
 def _parse_bat_arg(bat_path: Path, flag: str) -> str | None:
     """bat 파일 안의 `--flag "값"` 형태에서 값을 추출한다."""
@@ -291,10 +382,10 @@ def load_settings() -> dict:
     else:
         recovered = recover_settings_from_bat()
         merged = recovered if recovered else dict(DEFAULT_SETTINGS)
-        save_settings(merged)  # 복구했으면 다음부터는 바로 여기서 읽도록 저장해둔다
+        save_settings(merged)  # Persist recovered settings for subsequent launches.
 
-    # gui_settings.json/bat 어디에도 api_base가 없으면 .env에 저장된 값을 대신 쓴다
-    # (설치 시 입력한 값을 앱에서 다시 물어보지 않기 위함)
+    # Fall back to .env when neither gui_settings.json nor the launcher stores api_base.
+    # This avoids prompting again for the value chosen during installation.
     if not merged.get("api_base"):
         env_base = load_env_value("OPENAI_API_BASE")
         if env_base:
@@ -336,7 +427,7 @@ def save_env_values(values: dict) -> None:
                     matched_key = key
                     break
             if matched_key:
-                if values[matched_key]:  # 빈 값이면 아예 줄 자체를 지움
+                if values[matched_key]:  # Remove the line entirely for an empty value.
                     lines.append(f"{matched_key}={values[matched_key]}")
                 seen.add(matched_key)
             else:
@@ -349,7 +440,7 @@ def save_env_values(values: dict) -> None:
     ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# ── 백그라운드 파이프라인 실행 ────────────────────────────────────────────
+# ── Background pipeline execution ─────────────────────────────────────────
 
 class PipelineRunner:
     """서브프로세스로 파이프라인 스크립트를 실행하고, 출력 줄을 큐로 흘려보낸다."""
@@ -393,7 +484,8 @@ class PipelineRunner:
             self.log_queue.put(("line", "Python interpreter not found.\n"))
             self.log_queue.put(("done", -1))
             return
-        cmd = [python_exe, *args]
+        # -u makes child progress lines visible in the GUI immediately.
+        cmd = [python_exe, "-u", *args]
         self.log_queue.put(("line", f"$ {' '.join(cmd)}\n"))
         try:
             self._proc = subprocess.Popen(
@@ -406,6 +498,7 @@ class PipelineRunner:
                 errors="replace",
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
+            self.log_queue.put(("line", f"[Process] PID {self._proc.pid} started\n"))
             assert self._proc.stdout is not None
             for line in self._proc.stdout:
                 self.log_queue.put(("line", line))
@@ -425,8 +518,7 @@ class PipelineRunner:
 
 class App(tk.Tk):
     def __init__(self) -> None:
-        # Windows 작업 표시줄에서 pythonw.exe가 아니라 AI Research Lab 앱으로
-        # 그룹화되도록 AppUserModelID를 명시합니다.
+        # Group the Windows taskbar entry under AI Research Lab rather than pythonw.exe.
         if sys.platform == "win32":
             try:
                 import ctypes
@@ -444,8 +536,7 @@ class App(tk.Tk):
 
         self.title(tr(self.lang, "window_title"))
 
-        # Windows 작업 표시줄/창 아이콘을 설치된 AI Research Lab 아이콘으로 지정합니다.
-        # Tkinter 기본 아이콘(파이썬 로고)이 표시되지 않도록 설치 폴더의 digest.ico를 사용합니다.
+        # Use the installed AI Research Lab icon for the window and taskbar instead of Tkinter's Python icon.
         icon_path = PROJECT_ROOT / "digest.ico"
         if icon_path.exists():
             try:
@@ -468,7 +559,7 @@ class App(tk.Tk):
     def t(self, key: str, **kwargs) -> str:
         return tr(self.lang, key, **kwargs)
 
-    # ── 위젯 구성 ─────────────────────────────────────────────────────
+    # ── Widget construction ───────────────────────────────────────────────
     def _build_widgets(self) -> None:
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=False, padx=10, pady=(10, 0))
@@ -477,17 +568,20 @@ class App(tk.Tk):
         self.tab_topic = ttk.Frame(notebook)
         self.tab_analysis = ttk.Frame(notebook)
         self.tab_settings = ttk.Frame(notebook)
+        self.tab_advanced = ttk.Frame(notebook)
         notebook.add(self.tab_digest, text=self.t("tab_digest"))
         notebook.add(self.tab_topic, text=self.t("tab_topic"))
         notebook.add(self.tab_analysis, text=self.t("tab_analysis"))
         notebook.add(self.tab_settings, text=self.t("tab_settings"))
+        notebook.add(self.tab_advanced, text=self.t("tab_advanced"))
 
         self._build_digest_tab()
         self._build_topic_tab()
         self._build_analysis_tab()
         self._build_settings_tab()
+        self._build_advanced_settings_tab()
 
-        # ── 공용: 상태 표시줄 + 로그 창 ──
+        # ── Shared status bar and log pane ─────────────────────────────────
         status_frame = ttk.Frame(self)
         status_frame.pack(fill="x", padx=10, pady=(10, 0))
         self.status_var = tk.StringVar(value=self.t("status_idle"))
@@ -582,7 +676,7 @@ class App(tk.Tk):
     def _build_analysis_tab(self) -> None:
         f = self.tab_analysis
         f.columnconfigure(1, weight=1)
-        f.rowconfigure(7, weight=1)
+        f.rowconfigure(10, weight=1)
         pad = {"padx": 12, "pady": 6}
         ttk.Label(f, text=self.t("analysis_intro"), justify="left", wraplength=680).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 12)
@@ -604,25 +698,35 @@ class App(tk.Tk):
         ttk.Label(weights, text=self.t("analysis_signal")).grid(row=0, column=4, sticky="w")
         self.analysis_signal_var = tk.IntVar(value=20)
         ttk.Scale(weights, from_=0, to=100, variable=self.analysis_signal_var, orient="horizontal").grid(row=0, column=5, sticky="ew", padx=5)
+        ttk.Label(f, text=self.t("analysis_period")).grid(row=3, column=0, sticky="w", **pad)
+        self.analysis_period_var = tk.IntVar(value=30)
+        ttk.Combobox(f, textvariable=self.analysis_period_var, values=(7, 30, 90, 180, 365), state="readonly", width=8).grid(row=3, column=1, sticky="w", **pad)
         self.analysis_run_btn = ttk.Button(f, text=self.t("analysis_run_btn"), command=self._on_run_analysis)
-        self.analysis_run_btn.grid(row=3, column=0, columnspan=2, sticky="w", padx=12, pady=16)
+        self.analysis_run_btn.grid(row=4, column=0, columnspan=2, sticky="w", padx=12, pady=16)
         ttk.Label(
             f,
             text="Confirmed Trend / Emerging Signal / Rumor로 분리하며, 결과는 Settings의 Export format으로 저장됩니다."
             if self.lang == "ko"
             else "Results are separated into Confirmed Trend / Emerging Signal / Rumor and saved using the Settings export format.",
             wraplength=680,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
 
-        # ── 시간축 시각화 ─────────────────────────────────────────────
+        comparison_title = "직전 분석과 비교" if self.lang == "ko" else "Compare with previous analysis"
+        ttk.Label(f, text=comparison_title, font=("TkDefaultFont", 10, "bold")).grid(
+            row=6, column=0, columnspan=2, sticky="w", padx=12, pady=(4, 2)
+        )
+        self.analysis_comparison_text = tk.Text(f, height=6, wrap="word", state="disabled", background="#f8fafc", relief="solid", borderwidth=1)
+        self.analysis_comparison_text.grid(row=7, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 8))
+
+        # ── Timeline visualization ─────────────────────────────────────────
         ttk.Label(f, text=self.t("analysis_history"), font=("TkDefaultFont", 10, "bold")).grid(
-            row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(4, 2)
+            row=8, column=0, columnspan=2, sticky="w", padx=12, pady=(4, 2)
         )
         ttk.Label(f, text=self.t("analysis_history_hint"), wraplength=680).grid(
-            row=6, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 6)
+            row=9, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 6)
         )
         chart_frame = ttk.Frame(f)
-        chart_frame.grid(row=7, column=0, columnspan=2, sticky="nsew", padx=12, pady=(0, 12))
+        chart_frame.grid(row=10, column=0, columnspan=2, sticky="nsew", padx=12, pady=(0, 12))
         chart_frame.columnconfigure(0, weight=1)
         chart_frame.rowconfigure(0, weight=1)
         self.analysis_canvas = tk.Canvas(
@@ -634,8 +738,28 @@ class App(tk.Tk):
         chart_scroll.grid(row=0, column=1, sticky="ns")
         self.analysis_canvas.configure(yscrollcommand=chart_scroll.set)
         self.analysis_canvas.bind("<Configure>", lambda _e: self._draw_analysis_history())
+        self.analysis_topic_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_analysis_history())
     def _build_settings_tab(self) -> None:
-        f = self.tab_settings
+        settings_canvas = tk.Canvas(self.tab_settings, height=390, highlightthickness=0)
+        settings_scrollbar = ttk.Scrollbar(
+            self.tab_settings, orient="vertical", command=settings_canvas.yview
+        )
+        settings_canvas.configure(yscrollcommand=settings_scrollbar.set)
+        settings_canvas.grid(row=0, column=0, sticky="nsew")
+        settings_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.tab_settings.columnconfigure(0, weight=1)
+        self.tab_settings.rowconfigure(0, weight=1)
+
+        f = ttk.Frame(settings_canvas)
+        settings_window = settings_canvas.create_window((0, 0), window=f, anchor="nw")
+        f.bind(
+            "<Configure>",
+            lambda _event: settings_canvas.configure(scrollregion=settings_canvas.bbox("all")),
+        )
+        settings_canvas.bind(
+            "<Configure>",
+            lambda event: settings_canvas.itemconfigure(settings_window, width=event.width),
+        )
         f.columnconfigure(1, weight=1)
         pad = {"padx": 12, "pady": 6}
 
@@ -734,13 +858,191 @@ class App(tk.Tk):
 
         self.settings_status_var = tk.StringVar(value="")
         ttk.Label(f, textvariable=self.settings_status_var, foreground="#2a7a2a").grid(
-            row=18, column=1, sticky="w", padx=12, pady=(10, 0)
+            row=25, column=1, sticky="w", padx=12, pady=(10, 0)
         )
         ttk.Button(f, text=self.t("settings_save_btn"), command=self._on_save_settings).grid(
-            row=19, column=1, sticky="w", padx=12, pady=(4, 12)
+            row=26, column=1, sticky="w", padx=12, pady=(4, 12)
         )
 
-    # ── 값 로드 ───────────────────────────────────────────────────────
+    def _build_advanced_settings_tab(self) -> None:
+        """Keep data-source credentials and collection behavior separate from basics."""
+        canvas = tk.Canvas(self.tab_advanced, height=390, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.tab_advanced, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.tab_advanced.columnconfigure(0, weight=1)
+        self.tab_advanced.rowconfigure(0, weight=1)
+
+        f = ttk.Frame(canvas)
+        window = canvas.create_window((0, 0), window=f, anchor="nw")
+        f.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window, width=event.width))
+        f.columnconfigure(1, weight=1)
+
+        ttk.Label(f, text=self.t("settings_community_sources")).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 2)
+        )
+        self.reddit_enabled_var = tk.BooleanVar(value=True)
+        self.x_enabled_var = tk.BooleanVar(value=False)
+        self.youtube_enabled_var = tk.BooleanVar(value=False)
+        self.hackernews_enabled_var = tk.BooleanVar(value=True)
+        self.gdelt_enabled_var = tk.BooleanVar(value=True)
+        sources = ttk.Frame(f)
+        sources.grid(row=1, column=0, columnspan=2, sticky="w", padx=12)
+        for index, (key, variable) in enumerate([
+            ("settings_reddit", self.reddit_enabled_var),
+            ("settings_x", self.x_enabled_var),
+            ("settings_youtube", self.youtube_enabled_var),
+            ("settings_hackernews", self.hackernews_enabled_var),
+            ("settings_gdelt", self.gdelt_enabled_var),
+        ]):
+            ttk.Checkbutton(sources, text=self.t(key), variable=variable).grid(
+                row=index // 2, column=index % 2, sticky="w", padx=(0, 12)
+            )
+        self.include_time_unknown_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            sources,
+            text=self.t("settings_include_time_unknown"),
+            variable=self.include_time_unknown_var,
+        ).grid(row=3, column=0, columnspan=2, sticky="w")
+        self.gdelt_source_language_var = tk.StringVar(value="global")
+        ttk.Label(sources, text=self.t("settings_gdelt_language")).grid(
+            row=4, column=0, sticky="w", pady=(4, 0)
+        )
+        ttk.Combobox(
+            sources,
+            textvariable=self.gdelt_source_language_var,
+            values=("global", "korean", "english"),
+            state="readonly",
+            width=12,
+        ).grid(row=4, column=1, sticky="w", pady=(4, 0))
+        self.gdelt_region_profile_var = tk.StringVar(value="auto")
+        ttk.Label(sources, text=self.t("settings_gdelt_region")).grid(
+            row=5, column=0, sticky="w", pady=(4, 0)
+        )
+        ttk.Combobox(
+            sources,
+            textvariable=self.gdelt_region_profile_var,
+            values=("auto", "global_even", "country_focus"),
+            state="readonly",
+            width=12,
+        ).grid(row=5, column=1, sticky="w", pady=(4, 0))
+        self.reddit_client_id_var = tk.StringVar()
+        self.reddit_client_secret_var = tk.StringVar()
+        self.reddit_user_agent_var = tk.StringVar()
+        self.x_bearer_token_var = tk.StringVar()
+        self.youtube_api_key_var = tk.StringVar()
+        credentials = ttk.Frame(f)
+        credentials.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(10, 0))
+        credentials.columnconfigure(1, weight=1)
+        for row, (key, variable) in enumerate([
+            ("settings_reddit_id", self.reddit_client_id_var),
+            ("settings_reddit_secret", self.reddit_client_secret_var),
+            ("settings_reddit_agent", self.reddit_user_agent_var),
+            ("settings_x_token", self.x_bearer_token_var),
+            ("settings_youtube_key", self.youtube_api_key_var),
+        ]):
+            ttk.Label(credentials, text=self.t(key)).grid(row=row, column=0, sticky="w", pady=2)
+            ttk.Entry(credentials, textvariable=variable, show="•").grid(
+                row=row, column=1, sticky="ew", padx=(8, 0), pady=2
+            )
+        ttk.Button(
+            credentials,
+            text=self.t("settings_test_connections"),
+            command=self._on_test_community_sources,
+        ).grid(row=5, column=0, sticky="w", pady=(6, 0))
+        self.source_test_status_var = tk.StringVar(value="")
+        ttk.Label(credentials, textvariable=self.source_test_status_var, wraplength=520).grid(
+            row=6, column=0, columnspan=2, sticky="w", pady=(4, 0)
+        )
+        ttk.Separator(f).grid(row=3, column=0, columnspan=2, sticky="ew", padx=12, pady=(12, 8))
+        ttk.Label(f, text=self.t("settings_backfill_days")).grid(
+            row=4, column=0, sticky="w", padx=12, pady=6
+        )
+        self.new_topic_backfill_days_var = tk.IntVar(value=7)
+        ttk.Spinbox(
+            f, from_=1, to=90, textvariable=self.new_topic_backfill_days_var, width=8
+        ).grid(row=4, column=1, sticky="w", padx=12, pady=6)
+        ttk.Label(f, text=self.t("settings_backfill_interval_days")).grid(
+            row=5, column=0, sticky="w", padx=12, pady=6
+        )
+        self.new_topic_backfill_interval_days_var = tk.IntVar(value=1)
+        ttk.Spinbox(
+            f, from_=1, to=30, textvariable=self.new_topic_backfill_interval_days_var, width=8
+        ).grid(row=5, column=1, sticky="w", padx=12, pady=6)
+        ttk.Label(f, text=self.t("settings_backfill_daily_count")).grid(row=6, column=0, sticky="w", padx=12, pady=6)
+        self.backfill_daily_article_count_var = tk.IntVar(value=5)
+        ttk.Spinbox(f, from_=1, to=30, textvariable=self.backfill_daily_article_count_var, width=8).grid(row=6, column=1, sticky="w", padx=12, pady=6)
+        self.backfill_method_var = tk.StringVar(value="doc_api")
+        ttk.Label(f, text=self.t("settings_backfill_method")).grid(row=7, column=0, sticky="w", padx=12, pady=6)
+        ttk.Combobox(f, textvariable=self.backfill_method_var, values=("doc_api", "gdelt_dump"), state="readonly", width=14).grid(row=7, column=1, sticky="w", padx=12, pady=6)
+        self.dump_cache_policy_var = tk.StringVar(value="persistent")
+        ttk.Label(f, text=self.t("settings_dump_cache_policy")).grid(row=8, column=0, sticky="w", padx=12, pady=6)
+        ttk.Combobox(f, textvariable=self.dump_cache_policy_var, values=("persistent", "temporary"), state="readonly", width=14).grid(row=8, column=1, sticky="w", padx=12, pady=6)
+        self.dump_scan_mode_var = tk.StringVar(value="sample")
+        ttk.Label(f, text=self.t("settings_dump_scan_mode")).grid(row=9, column=0, sticky="w", padx=12, pady=6)
+        ttk.Combobox(f, textvariable=self.dump_scan_mode_var, values=("sample", "full"), state="readonly", width=14).grid(row=9, column=1, sticky="w", padx=12, pady=6)
+        self.latest_news_priority_var = tk.StringVar(value="google_rss")
+        ttk.Label(f, text=self.t("settings_latest_news_priority")).grid(row=10, column=0, sticky="w", padx=12, pady=6)
+        ttk.Combobox(f, textvariable=self.latest_news_priority_var, values=("google_rss", "gdelt"), state="readonly", width=14).grid(row=10, column=1, sticky="w", padx=12, pady=6)
+        self.google_rss_region_profile_var = tk.StringVar(value="balanced")
+        ttk.Label(f, text=self.t("settings_google_rss_region")).grid(row=11, column=0, sticky="w", padx=12, pady=6)
+        ttk.Combobox(f, textvariable=self.google_rss_region_profile_var, values=("balanced", "local_only"), state="readonly", width=14).grid(row=11, column=1, sticky="w", padx=12, pady=6)
+        ttk.Label(f, text=self.t("settings_auto_times")).grid(row=12, column=0, sticky="w", padx=12, pady=6)
+        self.auto_collection_times_var = tk.StringVar(value="09:00")
+        ttk.Entry(f, textvariable=self.auto_collection_times_var, width=22).grid(row=12, column=1, sticky="w", padx=12, pady=6)
+        buttons = ttk.Frame(f)
+        buttons.grid(row=13, column=1, sticky="w", padx=12, pady=4)
+        ttk.Button(buttons, text=self.t("settings_auto_register"), command=self._on_register_auto_collection).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(buttons, text=self.t("settings_auto_unregister"), command=self._on_unregister_auto_collection).grid(row=0, column=1)
+        alert_label = "분석 알림 조건" if self.lang == "ko" else "Analysis alert conditions"
+        ttk.Label(f, text=alert_label).grid(row=14, column=0, sticky="w", padx=12, pady=(10, 2))
+        self.analysis_alert_emerging_var = tk.BooleanVar(value=True)
+        self.analysis_alert_rising_var = tk.BooleanVar(value=True)
+        self.analysis_alert_contradictions_var = tk.BooleanVar(value=True)
+        self.analysis_alert_data_quality_var = tk.BooleanVar(value=True)
+        alert_frame = ttk.Frame(f)
+        alert_frame.grid(row=15, column=0, columnspan=2, sticky="w", padx=12)
+        alert_texts = (
+            ("신뢰도 높은 초기 신호" if self.lang == "ko" else "High-confidence emerging signals", self.analysis_alert_emerging_var),
+            ("시계열 상승 신호" if self.lang == "ko" else "Rising time-series signals", self.analysis_alert_rising_var),
+            ("상충 근거" if self.lang == "ko" else "Contradictory evidence", self.analysis_alert_contradictions_var),
+            ("데이터 품질 주의" if self.lang == "ko" else "Data-quality cautions", self.analysis_alert_data_quality_var),
+        )
+        for index, (text, variable) in enumerate(alert_texts):
+            ttk.Checkbutton(alert_frame, text=text, variable=variable).grid(row=index // 2, column=index % 2, sticky="w", padx=(0, 14))
+        dictionary_label = "사용자 태그 사전" if self.lang == "ko" else "Custom tag dictionary"
+        ttk.Label(f, text=dictionary_label).grid(row=16, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 2))
+        tag_frame = ttk.Frame(f)
+        tag_frame.grid(row=17, column=0, columnspan=2, sticky="ew", padx=12)
+        tag_frame.columnconfigure(1, weight=1)
+        tag_frame.columnconfigure(3, weight=1)
+        self.tag_canonical_var = tk.StringVar()
+        self.tag_aliases_var = tk.StringVar()
+        self.tag_parents_var = tk.StringVar()
+        ttk.Label(tag_frame, text="정규 태그" if self.lang == "ko" else "Canonical tag").grid(row=0, column=0, sticky="w")
+        ttk.Entry(tag_frame, textvariable=self.tag_canonical_var, width=20).grid(row=0, column=1, sticky="ew", padx=(6, 12))
+        ttk.Label(tag_frame, text="찾을 표현 (쉼표 구분)" if self.lang == "ko" else "Aliases (comma-separated)").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(tag_frame, textvariable=self.tag_aliases_var).grid(row=1, column=1, columnspan=3, sticky="ew", padx=(6, 0), pady=(4, 0))
+        ttk.Label(tag_frame, text="상위 태그 (쉼표 구분)" if self.lang == "ko" else "Parent tags (comma-separated)").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(tag_frame, textvariable=self.tag_parents_var).grid(row=2, column=1, columnspan=3, sticky="ew", padx=(6, 0), pady=(4, 0))
+        ttk.Button(tag_frame, text="추가/수정" if self.lang == "ko" else "Add / update", command=self._upsert_tag_dictionary_entry).grid(row=3, column=1, sticky="w", pady=(6, 4))
+        ttk.Button(tag_frame, text="선택 삭제" if self.lang == "ko" else "Delete selected", command=self._delete_tag_dictionary_entry).grid(row=3, column=2, sticky="w", padx=(6, 0), pady=(6, 4))
+        self.tag_dictionary_tree = ttk.Treeview(tag_frame, columns=("aliases", "parents"), show="tree headings", height=5)
+        self.tag_dictionary_tree.heading("#0", text="정규 태그" if self.lang == "ko" else "Canonical")
+        self.tag_dictionary_tree.heading("aliases", text="찾을 표현" if self.lang == "ko" else "Aliases")
+        self.tag_dictionary_tree.heading("parents", text="상위 태그" if self.lang == "ko" else "Parents")
+        self.tag_dictionary_tree.column("#0", width=130, stretch=False, anchor="center")
+        self.tag_dictionary_tree.column("aliases", width=250, anchor="center")
+        self.tag_dictionary_tree.column("parents", width=180, anchor="center")
+        self.tag_dictionary_tree.grid(row=4, column=0, columnspan=4, sticky="ew")
+        self.tag_dictionary_tree.bind("<<TreeviewSelect>>", self._select_tag_dictionary_entry)
+        ttk.Button(f, text=self.t("settings_save_btn"), command=self._on_save_settings).grid(
+            row=18, column=1, sticky="w", padx=12, pady=(10, 12)
+        )
+
+    # ── Load values ────────────────────────────────────────────────────
     def _load_settings_into_widgets(self) -> None:
         self.vault_name_var.set(self.settings["vault_name"])
         self.vault_path_var.set(self.settings["vault_path"])
@@ -751,6 +1053,29 @@ class App(tk.Tk):
         self.credibility_check_var.set(bool(self.settings.get("credibility_check", False)))
         self.credibility_threshold_var.set(int(self.settings.get("credibility_threshold", 40)))
         self.gossip_ratio_var.set(int(self.settings.get("gossip_ratio", 20)))
+        community_sources = self.settings.get("community_sources", {})
+        self.reddit_enabled_var.set(bool(community_sources.get("reddit", True)))
+        self.x_enabled_var.set(bool(community_sources.get("x", False)))
+        self.youtube_enabled_var.set(bool(community_sources.get("youtube", False)))
+        self.hackernews_enabled_var.set(bool(community_sources.get("hackernews", True)))
+        self.gdelt_enabled_var.set(bool(community_sources.get("gdelt", True)))
+        self.gdelt_source_language_var.set(self.settings.get("gdelt_source_language", "global"))
+        self.gdelt_region_profile_var.set(self.settings.get("gdelt_region_profile", "auto"))
+        self.new_topic_backfill_days_var.set(int(self.settings.get("new_topic_backfill_days", 7)))
+        self.new_topic_backfill_interval_days_var.set(int(self.settings.get("new_topic_backfill_interval_days", 1)))
+        self.backfill_daily_article_count_var.set(int(self.settings.get("backfill_daily_article_count", 5)))
+        self.backfill_method_var.set(self.settings.get("backfill_method", "doc_api"))
+        self.dump_cache_policy_var.set(self.settings.get("dump_cache_policy", "persistent"))
+        self.dump_scan_mode_var.set(self.settings.get("dump_scan_mode", "sample"))
+        self.latest_news_priority_var.set(self.settings.get("latest_news_priority", "google_rss"))
+        self.google_rss_region_profile_var.set(self.settings.get("google_rss_region_profile", "balanced"))
+        self.auto_collection_times_var.set(", ".join(self.settings.get("auto_collection_times", ["09:00"])))
+        self.include_time_unknown_var.set(bool(self.settings.get("include_time_unknown", False)))
+        self.reddit_client_id_var.set(load_env_value("REDDIT_CLIENT_ID"))
+        self.reddit_client_secret_var.set(load_env_value("REDDIT_CLIENT_SECRET"))
+        self.reddit_user_agent_var.set(load_env_value("REDDIT_USER_AGENT"))
+        self.x_bearer_token_var.set(load_env_value("X_BEARER_TOKEN"))
+        self.youtube_api_key_var.set(load_env_value("YOUTUBE_API_KEY"))
         self.language_var.set(self.settings.get("output_language", DEFAULT_OUTPUT_LANGUAGE))
         self._on_toggle_credibility()
         self._on_threshold_change()
@@ -758,6 +1083,18 @@ class App(tk.Tk):
         self.analysis_reliability_var.set(int(self.settings.get("analysis_reliability_weight", 50)))
         self.analysis_freshness_var.set(int(self.settings.get("analysis_freshness_weight", 30)))
         self.analysis_signal_var.set(int(self.settings.get("analysis_early_signal_weight", 20)))
+        self.analysis_period_var.set(int(self.settings.get("analysis_period_days", 30)))
+        self.analysis_alert_emerging_var.set(bool(self.settings.get("analysis_alert_emerging", True)))
+        self.analysis_alert_rising_var.set(bool(self.settings.get("analysis_alert_rising", True)))
+        self.analysis_alert_contradictions_var.set(bool(self.settings.get("analysis_alert_contradictions", True)))
+        self.analysis_alert_data_quality_var.set(bool(self.settings.get("analysis_alert_data_quality", True)))
+        dictionary_path = DATA_VAULT_DIR / "tag_dictionary.json"
+        try:
+            dictionary_value = json.loads(dictionary_path.read_text(encoding="utf-8")) if dictionary_path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            dictionary_value = {}
+        self.tag_dictionary_entries = dictionary_value if isinstance(dictionary_value, dict) else {}
+        self._refresh_tag_dictionary_tree()
         self._refresh_analysis_topics()
 
     def _refresh_favorites_list(self) -> None:
@@ -771,9 +1108,49 @@ class App(tk.Tk):
         if topics and not self.analysis_topic_var.get():
             self.analysis_topic_var.set(topics[0])
         self._draw_analysis_history()
+        self._draw_analysis_comparison()
 
     def _analysis_history_path(self, topic: str) -> Path:
-        return Path(self.settings["vault_path"]) / "topics" / _slugify(topic) / "_analysis_history.json"
+        return DATA_VAULT_DIR / "topics" / _slugify(topic) / "_analysis_history.json"
+
+    def _draw_analysis_comparison(self) -> None:
+        widget = getattr(self, "analysis_comparison_text", None)
+        if widget is None:
+            return
+        topic = self.analysis_topic_var.get().strip()
+        try:
+            history = json.loads(self._analysis_history_path(topic).read_text(encoding="utf-8")) if topic else []
+        except (OSError, json.JSONDecodeError):
+            history = []
+        if not isinstance(history, list) or len(history) < 2:
+            text = "분석을 두 번 이상 실행하면 직전 결과와의 변화가 표시됩니다." if self.lang == "ko" else "Run Analysis at least twice to see changes from the previous result."
+        else:
+            previous, current = history[-2], history[-1]
+            def items(snapshot):
+                return {
+                    row.get("key") or row.get("title", ""): {**row, "category": category}
+                    for category in ("rumors", "emerging_signals", "confirmed_trends")
+                    for row in snapshot.get(category, [])
+                    if row.get("key") or row.get("title")
+                }
+            before, after = items(previous), items(current)
+            added = [row for key, row in after.items() if key not in before]
+            removed = [row for key, row in before.items() if key not in after]
+            moved = [row for key, row in after.items() if key in before and row["category"] != before[key]["category"]]
+            changed = [row for key, row in after.items() if key in before and abs(float(row.get("confidence", 0)) - float(before[key].get("confidence", 0))) >= 10]
+            label = lambda rows: ", ".join(str(row.get("title", ""))[:55] for row in rows[:3]) or "-"
+            prefix = "비교" if self.lang == "ko" else "Comparison"
+            text = "\n".join([
+                f"{prefix}: {previous.get('date', '?')} → {current.get('date', '?')}",
+                ("새 신호: " if self.lang == "ko" else "New signals: ") + label(added),
+                ("사라진 신호: " if self.lang == "ko" else "No longer present: ") + label(removed),
+                ("등급 변화: " if self.lang == "ko" else "Category changes: ") + label(moved),
+                ("신뢰도 ±10 이상: " if self.lang == "ko" else "Confidence changes (10+): ") + label(changed),
+            ])
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        widget.configure(state="disabled")
 
     def _draw_analysis_history(self) -> None:
         """Draw category transitions without requiring a charting dependency."""
@@ -940,14 +1317,126 @@ class App(tk.Tk):
 
     def _refresh_analysis_history(self) -> None:
         self._draw_analysis_history()
+        self._draw_analysis_comparison()
 
-    # ── 설정 탭 이벤트 ────────────────────────────────────────────────
+    def _refresh_tag_dictionary_tree(self) -> None:
+        tree = getattr(self, "tag_dictionary_tree", None)
+        if tree is None:
+            return
+        tree.delete(*tree.get_children())
+        dictionary = getattr(self, "tag_dictionary_entries", {})
+        aliases = dictionary.get("aliases", {}) if isinstance(dictionary, dict) else {}
+        parents = dictionary.get("parents", {}) if isinstance(dictionary, dict) else {}
+        for canonical in sorted(set(aliases) | set(parents)):
+            tree.insert("", "end", iid=canonical, text=canonical, values=(", ".join(aliases.get(canonical, [])), ", ".join(parents.get(canonical, []))))
+
+    def _upsert_tag_dictionary_entry(self) -> None:
+        canonical = "_".join(self.tag_canonical_var.get().strip().lower().split())
+        aliases = [value.strip() for value in self.tag_aliases_var.get().split(",") if value.strip()]
+        parents = ["_".join(value.strip().lower().split()) for value in self.tag_parents_var.get().split(",") if value.strip()]
+        if not canonical or not aliases:
+            messagebox.showinfo(self.t("msg_save_title"), "정규 태그와 하나 이상의 찾을 표현을 입력하세요." if self.lang == "ko" else "Enter a canonical tag and at least one alias.")
+            return
+        dictionary = getattr(self, "tag_dictionary_entries", {})
+        dictionary.setdefault("aliases", {})[canonical] = aliases
+        if parents:
+            dictionary.setdefault("parents", {})[canonical] = parents
+        else:
+            dictionary.setdefault("parents", {}).pop(canonical, None)
+        self.tag_dictionary_entries = dictionary
+        self._refresh_tag_dictionary_tree()
+        self.tag_canonical_var.set("")
+        self.tag_aliases_var.set("")
+        self.tag_parents_var.set("")
+
+    def _delete_tag_dictionary_entry(self) -> None:
+        selected = self.tag_dictionary_tree.selection()
+        if not selected:
+            return
+        dictionary = getattr(self, "tag_dictionary_entries", {})
+        for canonical in selected:
+            dictionary.get("aliases", {}).pop(canonical, None)
+            dictionary.get("parents", {}).pop(canonical, None)
+        self.tag_dictionary_entries = dictionary
+        self._refresh_tag_dictionary_tree()
+
+    def _select_tag_dictionary_entry(self, _event=None) -> None:
+        selected = self.tag_dictionary_tree.selection()
+        if not selected:
+            return
+        canonical = selected[0]
+        dictionary = getattr(self, "tag_dictionary_entries", {})
+        self.tag_canonical_var.set(canonical)
+        self.tag_aliases_var.set(", ".join(dictionary.get("aliases", {}).get(canonical, [])))
+        self.tag_parents_var.set(", ".join(dictionary.get("parents", {}).get(canonical, [])))
+
+    # ── Settings-tab events ───────────────────────────────────────────────
     def _on_browse_vault(self) -> None:
         chosen = filedialog.askdirectory(
             title=self.t("settings_vault_path"), initialdir=self.vault_path_var.get() or str(PROJECT_ROOT)
         )
         if chosen:
             self.vault_path_var.set(chosen)
+
+    def _on_test_community_sources(self) -> None:
+        """Run opt-in API credential checks outside the Tkinter event loop."""
+        enabled_crawlers = []
+        if self.reddit_enabled_var.get():
+            enabled_crawlers.append(("Reddit", RedditCrawler(
+                self.reddit_client_id_var.get(),
+                self.reddit_client_secret_var.get(),
+                self.reddit_user_agent_var.get(),
+            )))
+        if self.x_enabled_var.get():
+            enabled_crawlers.append(("X", XCrawler(self.x_bearer_token_var.get())))
+        if self.youtube_enabled_var.get():
+            enabled_crawlers.append(("YouTube", YouTubeCrawler(self.youtube_api_key_var.get())))
+        if self.hackernews_enabled_var.get():
+            enabled_crawlers.append(("Hacker News", HackerNewsCrawler()))
+        if self.gdelt_enabled_var.get():
+            enabled_crawlers.append(("GDELT", GdeltCrawler()))
+
+        if not enabled_crawlers:
+            self.source_test_status_var.set("No community source is enabled.")
+            return
+
+        self.source_test_status_var.set(self.t("settings_test_running"))
+
+        def check_connections() -> None:
+            messages = []
+            for name, crawler in enabled_crawlers:
+                connected, message = crawler.validate_connection()
+                marker = "✓" if connected else "✗"
+                messages.append(f"{marker} {name}: {message}")
+            self.after(0, self.source_test_status_var.set, " | ".join(messages))
+
+        threading.Thread(target=check_connections, daemon=True).start()
+
+    def _parse_auto_collection_times(self) -> list[str]:
+        times = [item.strip() for item in self.auto_collection_times_var.get().split(",") if item.strip()]
+        if not 1 <= len(times) <= 3 or any(not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", item) for item in times):
+            raise ValueError("Enter one to three times in HH:MM format.")
+        return times
+
+    def _on_register_auto_collection(self) -> None:
+        try:
+            times = self._parse_auto_collection_times()
+        except ValueError as error:
+            messagebox.showerror(self.t("msg_save_title"), str(error))
+            return
+        command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(PROJECT_ROOT / "scripts" / "register_auto_collection.ps1"), "-Times", *times]
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if result.returncode == 0:
+            messagebox.showinfo(self.t("settings_auto_register"), f"Registered: {', '.join(times)}")
+        else:
+            messagebox.showerror(self.t("settings_auto_register"), result.stderr or result.stdout)
+
+    def _on_unregister_auto_collection(self) -> None:
+        result = subprocess.run(["powershell", "-NoProfile", "-Command", "Unregister-ScheduledTask -TaskName 'AI Research Lab Auto Collect' -Confirm:$false"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if result.returncode == 0:
+            messagebox.showinfo(self.t("settings_auto_unregister"), "Removed.")
+        else:
+            messagebox.showerror(self.t("settings_auto_unregister"), result.stderr or result.stdout)
 
     def _on_toggle_credibility(self) -> None:
         state = "normal" if self.credibility_check_var.get() else "disabled"
@@ -987,6 +1476,15 @@ class App(tk.Tk):
             return
 
         Path(self.vault_path_var.get().strip()).mkdir(parents=True, exist_ok=True)
+        try:
+            auto_collection_times = self._parse_auto_collection_times()
+        except ValueError as error:
+            messagebox.showerror(self.t("msg_save_title"), str(error))
+            return
+        dictionary_value = getattr(self, "tag_dictionary_entries", {})
+        dictionary_path = DATA_VAULT_DIR / "tag_dictionary.json"
+        dictionary_path.parent.mkdir(parents=True, exist_ok=True)
+        dictionary_path.write_text(json.dumps(dictionary_value, ensure_ascii=False, indent=2), encoding="utf-8")
 
         self.settings = {
             "vault_name": self.vault_name_var.get().strip(),
@@ -997,10 +1495,34 @@ class App(tk.Tk):
             "credibility_check": bool(self.credibility_check_var.get()),
             "credibility_threshold": int(self.credibility_threshold_var.get()),
             "gossip_ratio": int(self.gossip_ratio_var.get()),
+            "community_sources": {
+                "reddit": bool(self.reddit_enabled_var.get()),
+                "x": bool(self.x_enabled_var.get()),
+                "youtube": bool(self.youtube_enabled_var.get()),
+                "hackernews": bool(self.hackernews_enabled_var.get()),
+                "gdelt": bool(self.gdelt_enabled_var.get()),
+            },
+            "include_time_unknown": bool(self.include_time_unknown_var.get()),
+            "gdelt_source_language": self.gdelt_source_language_var.get(),
+            "gdelt_region_profile": self.gdelt_region_profile_var.get(),
+            "latest_news_priority": self.latest_news_priority_var.get(),
+            "google_rss_region_profile": self.google_rss_region_profile_var.get(),
+            "new_topic_backfill_days": int(self.new_topic_backfill_days_var.get()),
+            "new_topic_backfill_interval_days": int(self.new_topic_backfill_interval_days_var.get()),
+            "backfill_daily_article_count": int(self.backfill_daily_article_count_var.get()),
+            "backfill_method": self.backfill_method_var.get(),
+            "dump_cache_policy": self.dump_cache_policy_var.get(),
+            "dump_scan_mode": self.dump_scan_mode_var.get(),
+            "auto_collection_times": auto_collection_times,
             "output_language": self.language_var.get().strip() or DEFAULT_OUTPUT_LANGUAGE,
             "analysis_reliability_weight": int(self.analysis_reliability_var.get()),
             "analysis_freshness_weight": int(self.analysis_freshness_var.get()),
             "analysis_early_signal_weight": int(self.analysis_signal_var.get()),
+            "analysis_period_days": int(self.analysis_period_var.get()),
+            "analysis_alert_emerging": bool(self.analysis_alert_emerging_var.get()),
+            "analysis_alert_rising": bool(self.analysis_alert_rising_var.get()),
+            "analysis_alert_contradictions": bool(self.analysis_alert_contradictions_var.get()),
+            "analysis_alert_data_quality": bool(self.analysis_alert_data_quality_var.get()),
         }
         save_settings(self.settings)
 
@@ -1011,11 +1533,16 @@ class App(tk.Tk):
         save_env_values({
             "OPENAI_API_KEY": api_key,
             "OPENAI_API_BASE": self.api_base_var.get().strip(),
+            "REDDIT_CLIENT_ID": self.reddit_client_id_var.get().strip(),
+            "REDDIT_CLIENT_SECRET": self.reddit_client_secret_var.get().strip(),
+            "REDDIT_USER_AGENT": self.reddit_user_agent_var.get().strip(),
+            "X_BEARER_TOKEN": self.x_bearer_token_var.get().strip(),
+            "YOUTUBE_API_KEY": self.youtube_api_key_var.get().strip(),
         })
         self.settings_status_var.set(self.t("settings_saved_msg"))
         self.after(3500, lambda: self.settings_status_var.set(""))
 
-    # ── 즐겨찾기 탭 이벤트 ────────────────────────────────────────────
+    # ── Favorites-tab events ──────────────────────────────────────────────
     def _on_favorite_selected(self, _event=None) -> None:
         sel = self.fav_listbox.curselection()
         if sel:
@@ -1029,7 +1556,7 @@ class App(tk.Tk):
         self.favorites.remove(sel[0])
         self._refresh_favorites_list()
 
-    # ── 실행 공통 로직 ────────────────────────────────────────────────
+    # ── Shared execution logic ────────────────────────────────────────────
     def _guard_before_run(self) -> bool:
         if self.runner.is_running:
             messagebox.showinfo(self.t("msg_running_title"), self.t("msg_running_body"))
@@ -1039,14 +1566,23 @@ class App(tk.Tk):
             return False
         return True
 
-    def _start_run(self, args: list[str], buttons: list[ttk.Button]) -> None:
-        self._clear_log()
+    def _start_run(
+        self,
+        args: list[str],
+        buttons: list[ttk.Button],
+        *,
+        on_success=None,
+        clear_log: bool = True,
+    ) -> None:
+        if clear_log:
+            self._clear_log()
         for b in buttons:
             b.state(["disabled"])
         self.cancel_btn.state(["!disabled"])
         self.status_var.set(self.t("status_running"))
         self.progress.start(12)
         self._active_buttons = buttons
+        self._run_on_success = on_success
         self.runner.run(args)
 
     def _cancel_run(self) -> None:
@@ -1072,6 +1608,7 @@ class App(tk.Tk):
                 kind, payload = self.log_queue.get_nowait()
                 if kind == "line":
                     self._append_log(str(payload))
+                    self._handle_http_consent_request(str(payload))
                 elif kind == "done":
                     self.progress.stop()
                     self.cancel_btn.state(["disabled"])
@@ -1083,13 +1620,91 @@ class App(tk.Tk):
                     elif returncode == 0:
                         self.status_var.set(self.t("status_done"))
                         self._refresh_analysis_history()
+                        on_success = getattr(self, "_run_on_success", None)
+                        self._run_on_success = None
+                        if on_success is not None:
+                            self.after(0, on_success)
                     else:
                         self.status_var.set(self.t("status_error"))
         except queue.Empty:
             pass
         self.after(100, self._poll_log_queue)
 
-    # ── AI 다이제스트 탭 실행 ─────────────────────────────────────────
+    def _new_http_consent_file(self) -> Path:
+        return DATA_VAULT_DIR / f".http-consent-{uuid.uuid4().hex}.json"
+
+    def _missing_backfill_dates(self, topic: str, days: int) -> list[str]:
+        """Return missing completed calendar days in the configured history window."""
+        topic_dir = DATA_VAULT_DIR / "topics" / _slugify(topic)
+        snapshots = topic_dir / "snapshots"
+        covered: set[date] = set()
+        snapshot_paths = list(snapshots.glob("*.json")) if snapshots.exists() else []
+        # A genuinely new topic has no directory at all, so its first Topic
+        # Research establishes the baseline.  An existing topic directory with
+        # deleted/corrupt snapshots is different: every configured day is a
+        # real gap and must be eligible for recovery/backfill.
+        if not snapshot_paths:
+            if not topic_dir.exists():
+                return []
+            return [
+                (date.today() - timedelta(days=offset)).isoformat()
+                for offset in range(days, 0, -1)
+            ]
+        for path in snapshot_paths:
+            try:
+                snapshot = json.loads(path.read_text(encoding="utf-8"))
+                start_text = snapshot.get("window_start")
+                end_text = snapshot.get("window_end")
+                if start_text and end_text:
+                    start_day = datetime.fromisoformat(start_text).date()
+                    end_day = datetime.fromisoformat(end_text).date()
+                    cursor = start_day
+                    while cursor < end_day:
+                        covered.add(cursor)
+                        cursor += timedelta(days=1)
+                elif snapshot.get("collected_at"):
+                    covered.add(datetime.fromisoformat(snapshot["collected_at"]).date())
+            except (OSError, ValueError, json.JSONDecodeError, TypeError):
+                continue
+        # Today's Topic Research will collect today itself. Backfill only the
+        # completed days before it, so a seven-day setting means seven gaps.
+        expected = [date.today() - timedelta(days=offset) for offset in range(days, 0, -1)]
+        baseline = min(covered, default=date.today())
+        return [item.isoformat() for item in expected if item >= baseline and item not in covered]
+
+    def _handle_http_consent_request(self, line: str) -> None:
+        marker = "[HTTP_CONSENT_REQUIRED] "
+        if marker not in line:
+            return
+        candidate = line.split(marker, 1)[1].strip()
+        try:
+            consent_path = Path(candidate).resolve()
+            vault_path = DATA_VAULT_DIR.resolve()
+            if not consent_path.is_relative_to(vault_path):
+                self._append_log("[Security] ignored an HTTP consent request outside the data vault.\n")
+                return
+        except (OSError, ValueError):
+            return
+        if self.lang == "ko":
+            message = (
+                "GDELT HTTPS 인증서를 검증할 수 없어 현재 백필 작업이 대기 중입니다.\n\n"
+                "HTTP로 계속하면 전송 중 데이터가 변경되지 않았는지 확인할 수 없습니다. "
+                "이번 실행에 한해서 HTTP 연결을 허용할까요?\n\n"
+                "아니오를 선택하면 이 날짜는 보류로 기록되고 다음 수집 때 HTTPS로 다시 시도합니다."
+            )
+        else:
+            message = (
+                "The GDELT HTTPS certificate could not be verified, so this backfill is waiting.\n\n"
+                "HTTP cannot verify that data was not modified in transit. Allow HTTP for this run only?\n\n"
+                "Choosing No records this date as pending and retries HTTPS on the next collection."
+            )
+        allowed = messagebox.askyesno("GDELT dump security warning", message, icon="warning")
+        try:
+            consent_path.write_text(json.dumps({"allow": allowed}), encoding="utf-8")
+        except OSError as error:
+            self._append_log(f"[Security] could not send HTTP consent response: {error}\n")
+
+    # ── Run AI Digest tab ─────────────────────────────────────────────────
     def _on_run_digest(self) -> None:
         if not self._guard_before_run():
             return
@@ -1117,7 +1732,7 @@ class App(tk.Tk):
             args.append("--dry-run")
         self._start_run(args, [self.digest_run_btn])
 
-    # ── 주제 리서치 탭 실행 ───────────────────────────────────────────
+    # ── Run Topic Research tab ────────────────────────────────────────────
     def _on_run_topic(self) -> None:
         if not self._guard_before_run():
             return
@@ -1146,20 +1761,90 @@ class App(tk.Tk):
             "--limit", str(self.limit_var.get()),
             "--vault-name", self.settings["vault_name"],
             "--output-dir", self.settings["vault_path"],
+            "--data-dir", str(DATA_VAULT_DIR),
             "--model", self.settings["model"],
             "--format", self.settings.get("export_format", "obsidian"),
             "--output-language", current_output_language,
             "--gossip-ratio", str(self.gossip_ratio_var.get()),
+            "--community-sources", ",".join(
+                source for source, enabled in self.settings.get("community_sources", {}).items() if enabled
+            ),
+            "--gdelt-source-language", self.settings.get("gdelt_source_language", "global"),
+            "--gdelt-region-profile", self.settings.get("gdelt_region_profile", "auto"),
+            "--latest-news-priority", self.settings.get("latest_news_priority", "google_rss"),
+            "--google-rss-region-profile", self.settings.get("google_rss_region_profile", "balanced"),
         ]
+        if self.settings.get("include_time_unknown", False):
+            args.append("--include-time-unknown")
         if self.settings.get("credibility_check"):
             args += [
                 "--credibility-check",
                 "--credibility-threshold", str(self.settings.get("credibility_threshold", 40)),
             ]
+        # A queued dump retry remains actionable even if the preferred method
+        # was later changed to DOC API.
+        queued_dump_days = pending_days(DATA_VAULT_DIR, topic)
+        if queued_dump_days and self.gdelt_enabled_var.get():
+            backfill_args = [
+                "scripts/backfill_gdelt_dump.py", "--topic", topic, "--backfill-days", "1",
+                "--collection-interval-days", "1", "--limit", str(self.limit_var.get()), "--daily-limit", str(self.backfill_daily_article_count_var.get()),
+                "--cache-policy", self.dump_cache_policy_var.get(), "--data-dir", str(DATA_VAULT_DIR), "--output-dir", self.settings["vault_path"],
+                "--scan-mode", self.dump_scan_mode_var.get(), "--output-language", current_output_language, "--retry-pending", "--http-consent-file",
+                str(self._new_http_consent_file()),
+            ]
+            self._start_run(backfill_args, [self.topic_run_btn], on_success=lambda: self._start_run(args, [self.topic_run_btn], clear_log=False))
+            return
+        days = max(1, int(self.new_topic_backfill_days_var.get()))
+        topic_data_dir = DATA_VAULT_DIR / "topics" / _slugify(topic)
+        # A first-ever topic has no recovery gap yet, but the user can opt in
+        # to a short baseline backfill.  This is deliberately a prompt, never
+        # an automatic long-running job.
+        if not topic_data_dir.exists() and self.backfill_method_var.get() == "gdelt_dump":
+            if not self.gdelt_enabled_var.get():
+                messagebox.showwarning(self.t("msg_backfill_title"), self.t("msg_backfill_disabled"))
+            else:
+                if self.lang == "ko":
+                    prompt = f"새 토픽입니다. 최근 {days}일의 초기 기준선 데이터를 백필한 뒤 최신 Topic Research를 실행할까요?"
+                else:
+                    prompt = f"This is a new topic. Backfill {days} days for an initial baseline before running the latest Topic Research?"
+                if messagebox.askyesno(self.t("msg_backfill_title"), prompt):
+                    backfill_args = [
+                        "scripts/backfill_gdelt_dump.py", "--topic", topic,
+                        "--backfill-days", str(days),
+                        "--collection-interval-days", str(max(1, int(self.new_topic_backfill_interval_days_var.get()))),
+                        "--daily-limit", str(self.backfill_daily_article_count_var.get()),
+                        "--cache-policy", self.dump_cache_policy_var.get(), "--data-dir", str(DATA_VAULT_DIR),
+                        "--output-dir", self.settings["vault_path"], "--scan-mode", self.dump_scan_mode_var.get(),
+                        "--output-language", current_output_language, "--http-consent-file", str(self._new_http_consent_file()),
+                    ]
+                    self._start_run(backfill_args, [self.topic_run_btn], on_success=lambda: self._start_run(args, [self.topic_run_btn], clear_log=False))
+                    return
+        missing_dates = self._missing_backfill_dates(topic, days)
+        if missing_dates and self.backfill_method_var.get() == "gdelt_dump":
+            if not self.gdelt_enabled_var.get():
+                messagebox.showwarning(self.t("msg_backfill_title"), self.t("msg_backfill_disabled"))
+                self._start_run(args, [self.topic_run_btn])
+                return
+            if self.lang == "ko":
+                prompt = f"vault에서 최근 {days}일 중 {len(missing_dates)}일의 수집 기록이 비어 있습니다.\n\n누락된 날짜만 백필한 뒤 최신 Topic Research를 실행할까요?"
+            else:
+                prompt = f"The vault is missing {len(missing_dates)} of the previous {days} completed days.\n\nBackfill only those dates before running the latest Topic Research?"
+            if messagebox.askyesno(self.t("msg_backfill_title"), prompt):
+                backfill_args = [
+                    "scripts/backfill_gdelt_dump.py", "--topic", topic,
+                    "--backfill-days", str(days), "--dates", ",".join(missing_dates),
+                    "--collection-interval-days", str(max(1, int(self.new_topic_backfill_interval_days_var.get()))),
+                    "--daily-limit", str(self.backfill_daily_article_count_var.get()),
+                    "--cache-policy", self.dump_cache_policy_var.get(), "--data-dir", str(DATA_VAULT_DIR), "--output-dir", self.settings["vault_path"],
+                    "--scan-mode", self.dump_scan_mode_var.get(), "--output-language", current_output_language,
+                    "--http-consent-file", str(self._new_http_consent_file()),
+                ]
+                self._start_run(backfill_args, [self.topic_run_btn], on_success=lambda: self._start_run(args, [self.topic_run_btn], clear_log=False))
+                return
         self._start_run(args, [self.topic_run_btn])
 
 
-    # ── Analysis 탭 실행 ───────────────────────────────────────────────
+    # ── Run Analysis tab ──────────────────────────────────────────────────
     def _on_run_analysis(self) -> None:
         if not self._guard_before_run():
             return
@@ -1167,7 +1852,7 @@ class App(tk.Tk):
         if not topic:
             messagebox.showinfo(self.t("msg_topic_required_title"), self.t("analysis_need_research"))
             return
-        snapshot = Path(self.settings["vault_path"]) / "topics" / _slugify(topic) / "_analysis_input.json"
+        snapshot = DATA_VAULT_DIR / "topics" / _slugify(topic) / "_analysis_input.json"
         if not snapshot.exists():
             messagebox.showinfo(self.t("msg_topic_required_title"), self.t("analysis_need_research"))
             return
@@ -1179,12 +1864,18 @@ class App(tk.Tk):
             "--input", str(snapshot),
             "--vault-name", self.settings["vault_name"],
             "--output-dir", self.settings["vault_path"],
+            "--data-dir", str(DATA_VAULT_DIR),
             "--model", self.settings["model"],
             "--format", self.settings.get("export_format", "obsidian"),
             "--output-language", current_output_language,
             "--reliability-weight", str(self.analysis_reliability_var.get() / 100),
             "--freshness-weight", str(self.analysis_freshness_var.get() / 100),
             "--early-signal-weight", str(self.analysis_signal_var.get() / 100),
+            "--period-days", str(self.analysis_period_var.get()),
+            "--alert-emerging" if self.settings.get("analysis_alert_emerging", True) else "--no-alert-emerging",
+            "--alert-rising" if self.settings.get("analysis_alert_rising", True) else "--no-alert-rising",
+            "--alert-contradictions" if self.settings.get("analysis_alert_contradictions", True) else "--no-alert-contradictions",
+            "--alert-data-quality" if self.settings.get("analysis_alert_data_quality", True) else "--no-alert-data-quality",
         ]
         self._start_run(args, [self.analysis_run_btn])
 

@@ -10,10 +10,17 @@ import html
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
+from research_lab.crawler.hacker_news import HackerNewsCrawler
+from research_lab.crawler.gdelt import GdeltCrawler
+from research_lab.crawler.reddit import RedditCrawler
+from research_lab.crawler.x import XCrawler
+from research_lab.crawler.youtube import YouTubeCrawler
 
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -33,12 +40,19 @@ GOSSIP_TERMS = {
     "vi": '(blog OR "ý kiến cá nhân" OR diễn đàn OR thảo luận OR tin đồn)',
 }
 
-# 개인/커뮤니티성 자료를 우선하는 도메인. "가십"은 사실이라고 간주하지 않고
-# 단지 정보의 성격을 바꾸는 검색 신호로만 사용한다.
+        # Domains that favor personal or community material.  Gossip is never
+        # treated as fact; it only changes the type of signal being collected.
 GOSSIP_SITES = [
     "reddit.com", "medium.com", "substack.com", "blogspot.com",
     "wordpress.com", "quora.com",
 ]
+
+RSS_REGION_PROFILES = {
+    "KR": (("ko", "KR", 0.50), ("en", "US", 0.20), ("zh-CN", "CN", 0.15), ("ja", "JP", 0.10), ("en", "GB", 0.05)),
+    "US": (("en", "US", 0.50), ("en", "GB", 0.20), ("zh-CN", "CN", 0.15), ("ja", "JP", 0.10), ("ko", "KR", 0.05)),
+    "CN": (("zh-CN", "CN", 0.50), ("en", "US", 0.20), ("ko", "KR", 0.15), ("ja", "JP", 0.10), ("en", "GB", 0.05)),
+    "JP": (("ja", "JP", 0.50), ("en", "US", 0.20), ("zh-CN", "CN", 0.15), ("ko", "KR", 0.10), ("en", "GB", 0.05)),
+}
 
 
 @dataclass
@@ -49,6 +63,9 @@ class TopicArticle:
     date: str = ""
     source: str = ""
     kind: str = "news"
+    time_status: str = "unknown"
+    platform: str = ""
+    community: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -58,6 +75,9 @@ class TopicArticle:
             "summary": self.summary,
             "date": self.date,
             "kind": self.kind,
+            "time_status": self.time_status,
+            "platform": self.platform,
+            "community": self.community,
         }
 
 
@@ -66,30 +86,175 @@ class TopicNewsCrawler:
     WEB_URL = "https://www.google.com/search"
 
     def __init__(self, timeout: int = 10, lang: str = "ko", country: str = "KR", lr: str | None = None,
-                 gossip_ratio: int = 0) -> None:
+                 gossip_ratio: int = 0, gossip_mode: str = "best-effort",
+                 include_time_unknown: bool = False,
+                 allow_google_gossip_fallback: bool = True,
+                 community_sources: set[str] | None = None,
+                 reddit_crawler: RedditCrawler | None = None,
+                 x_crawler: XCrawler | None = None,
+                 youtube_crawler: YouTubeCrawler | None = None,
+                 hacker_news_crawler: HackerNewsCrawler | None = None,
+                 gdelt_crawler: GdeltCrawler | None = None,
+                 gdelt_source_language: str = "global",
+                 gdelt_region_profile: str = "auto",
+                 latest_news_priority: str = "google_rss",
+                 google_rss_region_profile: str = "balanced",
+                 allow_google_news: bool = True) -> None:
         self.timeout = timeout
         self.lang = lang
         self.country = country
         self.lr = lr or f"lang_{lang.split('-')[0]}"
         self.gossip_ratio = max(0, min(100, int(gossip_ratio)))
+        self.gossip_mode = gossip_mode if gossip_mode in {"best-effort", "strict"} else "best-effort"
+        self.include_time_unknown = include_time_unknown
+        self.allow_google_gossip_fallback = allow_google_gossip_fallback
+        self.allow_google_news = allow_google_news
+        self.latest_news_priority = (
+            latest_news_priority if latest_news_priority in {"google_rss", "gdelt"} else "google_rss"
+        )
+        self.google_rss_region_profile = (
+            google_rss_region_profile if google_rss_region_profile in {"balanced", "local_only"} else "balanced"
+        )
+        self.last_time_unknown_articles: list[dict] = []
+        self.community_sources = (
+            community_sources
+            if community_sources is not None
+            else {"reddit", "x", "youtube"}
+        )
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
+        self.reddit_crawler = reddit_crawler or RedditCrawler.from_environment(timeout=timeout)
+        self.x_crawler = x_crawler or XCrawler.from_environment(timeout=timeout)
+        self.youtube_crawler = youtube_crawler or YouTubeCrawler.from_environment(timeout=timeout)
+        self.hacker_news_crawler = hacker_news_crawler or HackerNewsCrawler(timeout=timeout)
+        self.gdelt_crawler = gdelt_crawler or GdeltCrawler(
+            source_language=gdelt_source_language,
+            region_profile=(
+                "country_focus" if gdelt_region_profile == "auto" else gdelt_region_profile
+            ),
+            target_country=self.country,
+            timeout=max(timeout, 30),
+        )
 
-    def fetch(self, topic: str, limit: int = 10) -> list[dict]:
+    def get_community_source_status(self, topic: str) -> list[dict[str, str]]:
+        """Return the effective community-source state for a topic without calling APIs."""
+        sources = [
+            ("reddit", self.reddit_crawler.is_configured, True),
+            ("x", self.x_crawler.is_configured, True),
+            ("youtube", self.youtube_crawler.is_configured, True),
+            ("hackernews", True, self.hacker_news_crawler.supports_topic(topic)),
+            ("gdelt", self.gdelt_crawler.is_configured, True),
+        ]
+        statuses: list[dict[str, str]] = []
+        for name, configured, eligible in sources:
+            if name not in self.community_sources:
+                state = "disabled"
+            elif not eligible:
+                state = "not_applicable"
+            elif not configured:
+                state = "credentials_missing"
+            else:
+                state = "ready"
+            statuses.append({"source": name, "state": state})
+        return statuses
+
+    def fetch(
+        self,
+        topic: str,
+        limit: int = 10,
+        window_start: datetime | None = None,
+        window_end: datetime | None = None,
+    ) -> list[dict]:
         topic = (topic or "").strip()
         if not topic:
             return []
 
-        gossip_n = round(limit * self.gossip_ratio / 100)
-        news_n = limit - gossip_n
+        # Collect more than the requested limit because time-window filtering is applied later.
+        collection_limit = max(limit * 3, 30)
+
+        gossip_n = round(collection_limit * self.gossip_ratio / 100)
+        news_n = collection_limit - gossip_n
+
         results: list[dict] = []
+        gdelt_results: list[dict] = []
 
-        if news_n:
-            results.extend(self._fetch_news(topic, news_n))
+        def fetch_google_news() -> list[dict]:
+            return self._fetch_news(topic, news_n) if news_n and self.allow_google_news else []
+
+        def fetch_gdelt() -> list[dict]:
+            if "gdelt" not in self.community_sources:
+                return []
+            return self.gdelt_crawler.fetch(topic, collection_limit, window_start, window_end)
+
+        if self.latest_news_priority == "google_rss":
+            # Fast RSS is the default. Avoid a slow GDELT request entirely when
+            # RSS already supplies the requested news allocation.
+            results.extend(fetch_google_news())
+            if len(results) < news_n:
+                gdelt_results = fetch_gdelt()
+                results.extend(gdelt_results)
+        else:
+            gdelt_results = fetch_gdelt() if news_n else []
+            results.extend(gdelt_results)
+            if len(gdelt_results) < news_n:
+                results.extend(fetch_google_news())
+
         if gossip_n:
-            results.extend(self._fetch_gossip(topic, gossip_n))
+            if window_start is None and window_end is None:
+                results.extend(self._fetch_gossip(topic, gossip_n))
+            else:
+                results.extend(self._fetch_gossip(topic, gossip_n, window_start, window_end))
 
-        # 한 소스가 부족하면 다른 소스로 자동 보충한다. 중복 URL은 제거한다.
+        self.last_time_unknown_articles = [
+            article for article in results
+            if article.get("kind") == "gossip" and article.get("time_status") == "unknown"
+        ]
+
+        results = self._filter_by_time_window(
+            results,
+            window_start,
+            window_end,
+            include_time_unknown=self.include_time_unknown,
+        )
+
+        news_results = [
+            article for article in results
+            if article.get("kind") == "news"
+        ]
+
+        gossip_results = [
+            article for article in results
+            if article.get("kind") == "gossip"
+        ]
+
+        target_gossip_n = round(limit * self.gossip_ratio / 100)
+        target_news_n = limit - target_gossip_n
+
+        selected_news = news_results[:target_news_n]
+        selected_gossip = gossip_results[:target_gossip_n]
+
+        results = selected_news + selected_gossip
+
+        if self.gossip_mode == "strict":
+            return results
+
+        # Fill shortages in one category with the other category.
+        if len(results) < limit:
+            selected_urls = {article["url"] for article in results}
+
+            for article in news_results + gossip_results:
+                if article["url"] in selected_urls:
+                    continue
+
+                results.append(article)
+                selected_urls.add(article["url"])
+
+                if len(results) >= limit:
+                    break
+
+        results = results[:limit]
+
+        # Fill source shortages automatically from other sources and deduplicate URLs.
         if len(results) < limit:
             existing = {a["url"] for a in results}
             if news_n:
@@ -106,11 +271,74 @@ class TopicNewsCrawler:
         return results[:limit]
 
     def _fetch_news(self, topic: str, limit: int) -> list[dict]:
+        if self.google_rss_region_profile == "local_only":
+            return self._fetch_news_region(topic, limit, self.lang, self.country)
+
+        regions = RSS_REGION_PROFILES.get(
+            self.country,
+            ((self.lang, self.country, 0.50), ("en", "US", 0.20), ("zh-CN", "CN", 0.15), ("ja", "JP", 0.10), ("en", "GB", 0.05)),
+        )
+        quotas = [max(1, int(limit * share)) for _, _, share in regions] if limit >= len(regions) else [int(limit * share) for _, _, share in regions]
+        while sum(quotas) > limit:
+            largest = max(range(len(quotas)), key=quotas.__getitem__)
+            if quotas[largest] <= 1:
+                break
+            quotas[largest] -= 1
+        for index in range(limit - sum(quotas)):
+            quotas[index % len(quotas)] += 1
+        regional_candidates: list[list[dict]] = []
+        for (lang, country, _share), quota in zip(regions, quotas):
+            if quota <= 0:
+                regional_candidates.append([])
+                continue
+            # Ask for a little surplus because syndicated articles often appear
+            # in several national editions and are removed by URL de-duplication.
+            candidates: list[dict] = []
+            for article in self._fetch_news_region(topic, max(quota * 2, 3), lang, country):
+                item = dict(article)
+                item["rss_region"] = country
+                candidates.append(item)
+            regional_candidates.append(candidates)
+
+        # Interleave regions by their requested share. Returning one country
+        # batch at a time made the final top-N selection look entirely US-only.
+        results: list[dict] = []
+        seen_urls: set[str] = set()
+        positions = [0] * len(regional_candidates)
+        selected_per_region = [0] * len(regional_candidates)
+        total_quota = max(1, sum(quotas))
+        while len(results) < limit:
+            eligible: list[int] = []
+            for index, candidates in enumerate(regional_candidates):
+                while positions[index] < len(candidates) and candidates[positions[index]]["url"] in seen_urls:
+                    positions[index] += 1
+                if positions[index] < len(candidates):
+                    eligible.append(index)
+            if not eligible:
+                break
+            index = max(
+                eligible,
+                key=lambda item: quotas[item] * (len(results) + 1) / total_quota - selected_per_region[item],
+            )
+            article = regional_candidates[index][positions[index]]
+            positions[index] += 1
+            results.append(article)
+            seen_urls.add(article["url"])
+            selected_per_region[index] += 1
+        if results:
+            mix = ", ".join(
+                f"{regions[index][1]}={count}"
+                for index, count in enumerate(selected_per_region) if count
+            )
+            print(f"  [Google RSS] regional candidates: {mix}", flush=True)
+        return results
+
+    def _fetch_news_region(self, topic: str, limit: int, lang: str, country: str) -> list[dict]:
         params = {
             "q": topic,
-            "hl": self.lang,
-            "gl": self.country,
-            "ceid": f"{self.country}:{self.lang}",
+            "hl": lang,
+            "gl": country,
+            "ceid": f"{country}:{lang}",
         }
         try:
             resp = self.session.get(self.RSS_URL, params=params, timeout=self.timeout)
@@ -130,12 +358,129 @@ class TopicNewsCrawler:
             description = (item.findtext("description") or "").strip()
             if not title or not link:
                 continue
-            articles.append(TopicArticle(title, link, self._clean_description(description), pub_date, source, "news").to_dict())
+
+            time_status = "known" if pub_date else "unknown"
+
+            articles.append(TopicArticle(title, link, self._clean_description(description), pub_date, source, "news", time_status).to_dict())
             if len(articles) >= limit:
                 break
         return articles
 
-    def _fetch_gossip(self, topic: str, limit: int) -> list[dict]:
+    @staticmethod
+    def _parse_article_datetime(value: str) -> datetime | None:
+        """Google News pubDate를 timezone-aware datetime으로 변환한다."""
+        if not value:
+            return None
+
+        try:
+            from email.utils import parsedate_to_datetime
+
+            dt = parsedate_to_datetime(value)
+
+            if dt.tzinfo is None:
+                return dt.astimezone()
+
+            return dt
+        except (TypeError, ValueError, IndexError):
+            try:
+                # GDELT uses compact UTC timestamps such as 20260815090000.
+                if re.fullmatch(r"\d{14}", value):
+                    from datetime import timezone
+
+                    return datetime.strptime(value, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+                normalized = value.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(normalized)
+                return dt if dt.tzinfo is not None else dt.astimezone()
+            except (TypeError, ValueError):
+                return None
+
+    @staticmethod
+    def _filter_by_time_window(
+        articles: list[dict],
+        window_start: datetime | None,
+        window_end: datetime | None,
+        *,
+        include_time_unknown: bool = False,
+    ) -> list[dict]:
+        """지정된 시간 구간 [start, end)에 해당하는 기사만 반환한다."""
+
+        filtered: list[dict] = []
+
+        for article in articles:
+            article_dt = TopicNewsCrawler._parse_article_datetime(
+                article.get("date", "")
+            )
+
+            if article_dt is None:
+                if article.get("kind") == "gossip" and include_time_unknown:
+                    filtered.append(article)
+                elif window_start is None and window_end is None and article.get("kind") != "gossip":
+                    filtered.append(article)
+                continue
+
+            if window_start is None and window_end is None:
+                filtered.append(article)
+                continue
+
+            if window_start is not None:
+                article_dt = article_dt.astimezone(window_start.tzinfo)
+
+            if window_start is not None and article_dt < window_start:
+                continue
+
+            if window_end is not None and article_dt >= window_end:
+                continue
+
+            filtered.append(article)
+
+        return filtered
+
+    def _fetch_gossip(
+        self,
+        topic: str,
+        limit: int,
+        window_start: datetime | None = None,
+        window_end: datetime | None = None,
+    ) -> list[dict]:
+        crawlers = []
+        if "reddit" in self.community_sources and self.reddit_crawler.is_configured:
+            crawlers.append(self.reddit_crawler)
+        if "x" in self.community_sources and self.x_crawler.is_configured:
+            crawlers.append(self.x_crawler)
+        if "youtube" in self.community_sources and self.youtube_crawler.is_configured:
+            crawlers.append(self.youtube_crawler)
+        if (
+            "hackernews" in self.community_sources
+            and self.hacker_news_crawler.supports_topic(topic)
+        ):
+            crawlers.append(self.hacker_news_crawler)
+
+        if crawlers:
+            results: list[dict] = []
+            seen_urls: set[str] = set()
+            per_source_limit = max(1, (limit + len(crawlers) - 1) // len(crawlers))
+            for crawler in crawlers:
+                if window_start is None and window_end is None:
+                    fetched_articles = crawler.fetch(topic, per_source_limit)
+                else:
+                    fetched_articles = crawler.fetch(
+                        topic,
+                        per_source_limit,
+                        window_start=window_start,
+                        window_end=window_end,
+                    )
+                for article in fetched_articles:
+                    if article["url"] not in seen_urls:
+                        results.append(article)
+                        seen_urls.add(article["url"])
+                    if len(results) >= limit:
+                        return results
+            return results
+        if self.allow_google_gossip_fallback:
+            return self._fetch_google_gossip(topic, limit)
+        return []
+
+    def _fetch_google_gossip(self, topic: str, limit: int) -> list[dict]:
         lang_key = self.lang if self.lang in GOSSIP_TERMS else self.lang.split("-")[0]
         terms = GOSSIP_TERMS.get(lang_key, GOSSIP_TERMS["en"])
         sites = " OR ".join(f"site:{site}" for site in GOSSIP_SITES)

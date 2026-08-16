@@ -73,10 +73,10 @@ class AnalysisGPTAnalyzer:
         self.timeout = timeout
         self.base_url = base_url or None
 
-    def analyze(self, topic: str, sources: list[dict], output_language: str = "한국어") -> AnalysisGPTResult:
+    def analyze(self, topic: str, sources: list[dict], output_language: str = "한국어", cross_topic_context: list[dict] | None = None, previous_summary: str = "", time_series: dict | None = None) -> AnalysisGPTResult:
         if not sources:
             return AnalysisGPTResult.error_result("분석할 자료가 없습니다.")
-        prompt = self._build_user_message(topic, sources, output_language)
+        prompt = self._build_user_message(topic, sources, output_language, cross_topic_context or [], previous_summary, time_series or {})
         try:
             import openai
             client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
@@ -107,7 +107,7 @@ class AnalysisGPTAnalyzer:
             raw_response=raw,
         )
 
-    def _build_user_message(self, topic: str, sources: list[dict], output_language: str) -> str:
+    def _build_user_message(self, topic: str, sources: list[dict], output_language: str, cross_topic_context: list[dict], previous_summary: str, time_series: dict) -> str:
         lines = [f"Topic: {topic}", f"Output language: {output_language}", "", "Sources:"]
         for i, s in enumerate(sources):
             lines.append(
@@ -117,5 +117,18 @@ class AnalysisGPTAnalyzer:
             )
             if s.get("summary"):
                 lines.append(f"    summary={s['summary'][:1200]}")
+        if previous_summary:
+            lines += ["", "Previous analysis summary (context only; reassess if new evidence disagrees):", previous_summary[:700]]
+        if cross_topic_context:
+            lines += ["", "Cross-topic evidence (supporting context only, never replace the supplied sources):"]
+            for row in cross_topic_context:
+                lines.append(
+                    f"- [{row.get('match_type')}] topic={row.get('topic')} tag={row.get('tag')} "
+                    f"category={row.get('category')} confidence={row.get('confidence')} "
+                    f"summary={row.get('summary', '')[:280]}"
+                )
+        if time_series:
+            lines += ["", "Local time-series evidence (computed from stored snapshots; use it to qualify direction, not as source evidence):"]
+            lines.append(json.dumps(time_series, ensure_ascii=False, separators=(",", ":"))[:3500])
         lines.append("\nClassify evidence conservatively and keep source indices traceable.")
         return "\n".join(lines)

@@ -3,7 +3,7 @@ topic_formatter.py
 
 주제 뉴스 분석 결과를 Obsidian 마크다운으로 저장한다.
 
-출력 파일: vault/topics/{주제}/{YYYY-MM-DD}.md
+출력 파일: vault/topics/{주제}/{YYYY-MM-DD_HH-MM-SS}.md
 
 lang 파라미터("ko"/"en")는 고정 틀 문구(섹션 제목 등)만 바꾼다. 실제 GPT가 작성한
 본문 내용의 언어는 analyzer 호출 시 넘긴 output_language로 이미 결정되어 있다.
@@ -47,7 +47,10 @@ class TopicDigestFormatter:
         out_dir = self.vault_dir / TOPICS_DIR / topic_slug
         out_dir.mkdir(parents=True, exist_ok=True)
         content = self._render(result)
-        path = out_dir / f"{result.date}.md"
+        # Preserve every collection made on the same day instead of replacing
+        # the earlier Topic Research note.
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        path = out_dir / f"{timestamp}.md"
         path.write_text(content, encoding="utf-8")
         return path
 

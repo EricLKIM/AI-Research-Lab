@@ -71,7 +71,7 @@ def load_env_value(key: str) -> str:
 class AppConfig:
     """앱 전체 설정. 환경 변수로부터 빌드된다."""
 
-    # 모델 설정
+    # Model settings
     ai_model: str
     ai_model_fallback: str
     ai_max_tokens: int
@@ -80,11 +80,11 @@ class AppConfig:
     openai_api_key: str
     openai_api_base: str | None
 
-    # 경로
+    # Paths
     vault_path: Path
     memory_path: Path
 
-    # 운영
+    # Operations
     debug: bool
     log_level: str
 
@@ -93,7 +93,7 @@ class AppConfig:
         """환경 변수에서 설정을 로드한다. 필수 변수 누락 시 ValueError 발생."""
         _load_env()
 
-        # 필수 변수 검증
+        # Validate required variables.
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             raise ValueError(
@@ -106,8 +106,8 @@ class AppConfig:
             ai_model_fallback=os.environ.get("AI_MODEL_FALLBACK", "gpt-5-codex"),
             ai_max_tokens=int(os.environ.get("AI_MAX_TOKENS", "10000")),
             openai_api_key=api_key,
-            # 커스텀 엔드포인트가 필요할 때만 설정 (사내 프록시, Azure OpenAI 호환,
-            # 로컬 LLM 서버 등). 비어있으면 OpenAI 공식 엔드포인트를 사용한다.
+        # Configure only when a custom endpoint is needed (proxy, Azure-compatible,
+        # or local LLM server).  Otherwise use the official OpenAI endpoint.
             openai_api_base=os.environ.get("OPENAI_API_BASE", "").strip() or None,
             vault_path=Path(os.environ.get("VAULT_PATH", "./vault")),
             memory_path=Path(os.environ.get("MEMORY_PATH", "./memory")),
@@ -116,7 +116,7 @@ class AppConfig:
         )
 
 
-# 싱글턴 패턴 — 필요할 때만 로드
+# Singleton pattern — load only when needed.
 _config: AppConfig | None = None
 
 

@@ -1,0 +1,38 @@
+[
+  {
+    "source": "Test News",
+    "title": "AI model announced",
+    "url": "https://example.com/known-1",
+    "summary": "A test article with a known publication time.",
+    "date": "Thu, 13 Aug 2026 08:00:00 GMT",
+    "kind": "news",
+    "time_status": "known"
+  },
+  {
+    "source": "Test News",
+    "title": "AI regulation announced",
+    "url": "https://example.com/known-2",
+    "summary": "Another test article with a known publication time.",
+    "date": "Thu, 13 Aug 2026 10:00:00 GMT",
+    "kind": "news",
+    "time_status": "known"
+  },
+  {
+    "source": "Test Gossip",
+    "title": "AI industry rumor",
+    "url": "https://example.com/unknown-1",
+    "summary": "A test item without a reliable publication time.",
+    "date": "",
+    "kind": "gossip",
+    "time_status": "time_unknown"
+  },
+  {
+    "source": "Test Gossip",
+    "title": "AI company discussion",
+    "url": "https://example.com/unknown-2",
+    "summary": "Another item whose publication time cannot be determined.",
+    "date": "",
+    "kind": "gossip",
+    "time_status": "time_unknown"
+  }
+]

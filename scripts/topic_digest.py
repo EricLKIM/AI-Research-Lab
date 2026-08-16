@@ -14,7 +14,7 @@ GPT로 분석/정리해서 Obsidian 노트로 저장한다.
 사용법:
     uv run python scripts/topic_digest.py --topic "경제"
     uv run python scripts/topic_digest.py --topic "반도체" --limit 15
-    uv run python scripts/topic_digest.py --topic "부동산" --dry-run   # 크롤링만, API 호출 없음
+    uv run python scripts/topic_digest.py --topic "부동산" --dry-run   # Crawl only; skip the API call.
 """
 
 import argparse
@@ -23,14 +23,14 @@ import os
 import sys
 import urllib.parse
 import webbrowser
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-# Windows 콘솔 기본 코드페이지(cp949 등)에서는 이모지 출력 시 UnicodeEncodeError가
-# 발생할 수 있어, 표준출력/에러를 UTF-8로 강제 전환한다.
+# Windows consoles can raise UnicodeEncodeError for emoji under legacy code pages.
+# Force UTF-8 for standard output and error streams.
 if sys.platform == "win32":
     for _stream in (sys.stdout, sys.stderr):
         try:
@@ -45,6 +45,8 @@ from research_lab.export.multi_format import save_topic_digest, EXPORT_FORMATS, 
 from research_lab.digest.topic_formatter import _slugify
 from research_lab.i18n import resolve_ui_lang, DEFAULT_OUTPUT_LANGUAGE, google_search_profile
 from research_lab.utils.favorites import TopicFavorites
+from research_lab.time_series import save_snapshot
+from research_lab.tagging import tag_articles
 
 
 def load_api_key() -> str:
@@ -78,6 +80,26 @@ def load_api_base() -> str | None:
 def step(n: int, total: int, msg: str) -> None:
     print(f"\n[{n}/{total}] {msg}")
 
+def calculate_collection_window(
+    collected_at: datetime,
+    interval_hours: int,
+) -> tuple[datetime, datetime]:
+    """
+    Calculate a half-open collection window [start, end).
+
+    Example:
+        collected_at = 2026-08-13 20:00
+        interval_hours = 12
+
+        -> [2026-08-13 08:00, 2026-08-13 20:00)
+    """
+    if interval_hours <= 0:
+        raise ValueError("interval_hours must be greater than 0.")
+
+    window_end = collected_at
+    window_start = window_end - timedelta(hours=interval_hours)
+
+    return window_start, window_end
 
 def console_strings(output_language: str | None) -> dict[str, str]:
     """Return fixed console UI strings. Korean uses Korean; every other language falls back to English."""
@@ -319,6 +341,7 @@ def main() -> None:
     parser.add_argument("--api-base", default=None, help="커스텀 OpenAI API Base URL (기본: .env의 OPENAI_API_BASE 또는 공식 엔드포인트)")
     parser.add_argument("--dry-run", action="store_true", help="크롤링만 실행 (GPT 호출 없음)")
     parser.add_argument("--output-dir", default=None, help="저장 경로 (기본: vault/)")
+    parser.add_argument("--data-dir", default=None, help="JSON 데이터 저장 경로 (기본: output-dir)")
     parser.add_argument("--vault-name", default="vault", help="Obsidian Vault 이름 (기본: vault)")
     parser.add_argument("--no-open", action="store_true", help="완료 후 자동 실행 생략")
     parser.add_argument(
@@ -338,6 +361,58 @@ def main() -> None:
         help="검색 결과 중 개인 의견/가십성 자료의 목표 비율 0~100 (기본: 20)",
     )
     parser.add_argument(
+        "--gossip-mode",
+        choices=["best-effort", "strict"],
+        default="best-effort",
+        help="가십 자료 부족 시 뉴스로 보충할지 선택 (기본: best-effort)",
+    )
+    parser.add_argument(
+        "--community-sources",
+        default="reddit,x,youtube,hackernews",
+        help="활성화할 커뮤니티 수집원 쉼표 목록 (reddit,x,youtube,hackernews)",
+    )
+    parser.add_argument(
+        "--gdelt-source-language",
+        default="global",
+        choices=["global", "korean", "english"],
+        help="GDELT 원문 언어: global, korean, english (기본: global)",
+    )
+    parser.add_argument(
+        "--gdelt-region-profile",
+        default="auto",
+        choices=["auto", "global_even", "country_focus"],
+        help="GDELT 지역 분산: auto, global_even, country_focus (기본: auto)",
+    )
+    parser.add_argument(
+        "--latest-news-priority",
+        default="google_rss",
+        choices=["google_rss", "gdelt"],
+        help="최신 뉴스 우선 수집원: google_rss(기본, RSS가 부족할 때만 GDELT) 또는 gdelt",
+    )
+    parser.add_argument(
+        "--google-rss-region-profile",
+        default="balanced",
+        choices=["balanced", "local_only"],
+        help="Google RSS 국가 분산: balanced(기본) 또는 local_only",
+    )
+    parser.add_argument(
+        "--include-time-unknown",
+        action="store_true",
+        help="시간을 확인할 수 없는 커뮤니티 자료도 최종 결과에 포함",
+    )
+
+    parser.add_argument(
+        "--collection-interval-hours",
+        type=int,
+        default=None,
+        choices=[1, 3, 6, 8, 12, 24],
+        help=(
+            "시간 기반 수집 window. "
+            "1, 3, 6, 8, 12, 24시간 중 선택. "
+            "지정하지 않으면 기존 방식으로 동작."
+        ),
+    )
+    parser.add_argument(
         "--output-language", default=DEFAULT_OUTPUT_LANGUAGE,
         help=(
             f"다이제스트 내용을 작성할 언어 (기본: {DEFAULT_OUTPUT_LANGUAGE}). "
@@ -347,10 +422,16 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(PROJECT_ROOT / ".env")
+    except ImportError:
+        pass
     ui = console_strings(args.output_language)
 
     today = date.today().isoformat()
     vault_dir = Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "vault"
+    data_dir = Path(args.data_dir) if args.data_dir else vault_dir
     run_credibility = args.credibility_check and not args.dry_run
     total_steps = 2 if args.dry_run else (4 if run_credibility else 3)
 
@@ -362,20 +443,58 @@ def main() -> None:
     print(f"  🔎 Topic Research Digest — 「{topic}」 — {today}")
     print(f"{'='*50}")
 
-    # ── Step 1: 뉴스 크롤링 ───────────────────────────────────────────────
+    # ── Step 1: Crawl news ─────────────────────────────────────────────────
     step(1, total_steps, ui['search'].format(topic=topic, limit=args.limit))
     search_profile = google_search_profile(args.output_language)
     gossip_ratio = max(0, min(100, args.gossip_ratio))
     print(
         f"  → {ui['google_profile'].format(lang=search_profile['lang'], country=search_profile['country'], ratio=gossip_ratio)}"
     )
+    collected_at = datetime.now().astimezone()
+
+    window_start = None
+    window_end = None
+
+    if args.collection_interval_hours is not None:
+        window_start, window_end = calculate_collection_window(
+            collected_at,
+            args.collection_interval_hours,
+        )
+
+        print(
+            f"  → Collection window: "
+            f"{window_start.isoformat()} <= article_time < "
+            f"{window_end.isoformat()}"
+        )
+
     crawler = TopicNewsCrawler(
         lang=search_profile["lang"],
         country=search_profile["country"],
         lr=search_profile["lr"],
         gossip_ratio=gossip_ratio,
+        gossip_mode=args.gossip_mode,
+        include_time_unknown=args.include_time_unknown,
+        community_sources={source.strip().lower() for source in args.community_sources.split(",") if source.strip()},
+        gdelt_source_language=args.gdelt_source_language,
+        gdelt_region_profile=args.gdelt_region_profile,
+        latest_news_priority=args.latest_news_priority,
+        google_rss_region_profile=args.google_rss_region_profile,
     )
-    articles = crawler.fetch(topic, limit=args.limit)
+    source_status = ", ".join(
+        f"{item['source']}={item['state']}"
+        for item in crawler.get_community_source_status(topic)
+    )
+    print(f"  → Community sources: {source_status}")
+
+    articles = crawler.fetch(
+        topic,
+        limit=args.limit,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    # Store deterministic tag metadata with the raw collection.  Analysis can
+    # reuse it later without another model call or a second crawl.
+    articles = tag_articles(articles, topic)
     print(f"  → {ui['collected'].format(count=len(articles))}")
     for a in articles:
         print(f"     · {a['title'][:60]}")
@@ -384,10 +503,29 @@ def main() -> None:
         print(f"\n  ❌ {ui['no_articles']}")
         sys.exit(1)
 
-    # Analysis 탭/스크립트가 동일한 Topic Research 결과를 재사용할 수 있도록
-    # 원자료 스냅샷을 저장한다. 사용자가 선택한 언어/검색 성향도 함께 기록한다.
-    snapshot_dir = vault_dir / "topics" / _slugify(topic)
+    # Topic storage directory
+    snapshot_dir = data_dir / "topics" / _slugify(topic)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    # Time-Series snapshot
+    # Preserve raw collected data as time-series snapshots.
+    try:
+        time_series_snapshot = save_snapshot(
+            topic_directory=snapshot_dir,
+            topic=topic,
+            articles=articles,
+            collected_at=collected_at,
+            window_start=window_start,
+            window_end=window_end,
+            output_language=args.output_language,
+            gossip_ratio=gossip_ratio,
+            time_unknown_articles=crawler.last_time_unknown_articles,
+        )
+        print(f"  → Time-series snapshot saved: {time_series_snapshot}")
+    except Exception as exc:
+        print(f"  ⚠️ Time-series snapshot save failed: {exc}")
+
+    # Save a raw snapshot for reuse by the Analysis tab and script.
     snapshot_path = snapshot_dir / "_analysis_input.json"
     snapshot_path.write_text(
         json.dumps({
@@ -396,11 +534,12 @@ def main() -> None:
             "output_language": args.output_language,
             "gossip_ratio": gossip_ratio,
             "articles": articles,
+            "time_unknown_articles": crawler.last_time_unknown_articles,
         }, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    # dry-run 종료 (신뢰성 평가도 GPT 호출이라 dry-run에서는 건너뛴다)
+    # End dry-run; credibility scoring also uses GPT and is skipped here.
     if args.dry_run:
         step(2, total_steps, ui['dry_run'])
         print(f"\n  {ui['crawl_data']}")
@@ -413,7 +552,7 @@ def main() -> None:
     ui_lang = resolve_ui_lang(args.output_language)
     step_n = 1
 
-    # ── (선택) Step: 신뢰성 평가 ───────────────────────────────────────────
+    # ── Optional step: credibility scoring ─────────────────────────────────
     if run_credibility:
         step_n += 1
         step(step_n, total_steps, ui['credibility'].format(threshold=args.credibility_threshold))
@@ -424,7 +563,7 @@ def main() -> None:
             print(f"\n  ❌ {ui['no_articles_after_credibility']}")
             sys.exit(1)
 
-    # ── Step: GPT 분석 ────────────────────────────────────────────────────
+    # ── Step: GPT analysis ─────────────────────────────────────────────────
     step_n += 1
     step(step_n, total_steps, ui['gpt'].format(model=args.model, language=args.output_language))
     analyzer = TopicAnalyzer(api_key=api_key, model=args.model, base_url=api_base)
@@ -440,13 +579,13 @@ def main() -> None:
     print(f"     {ui['trends'].format(count=len(result.trend_summary))}")
     print(f"     {ui['highlights'].format(count=len(result.highlights))}")
 
-    # ── Step: 파일 저장 ────────────────────────────────────────────────────
+    # ── Step: save output ──────────────────────────────────────────────────
     step_n += 1
     step(step_n, total_steps, ui['saving'].format(format=args.format))
     out_path = save_topic_digest(result, vault_dir, args.format, lang=ui_lang)
     print(f"  ✅ {ui['saved_check'].format(path=out_path)}")
 
-    # ── 결과 파일 자동 실행 ───────────────────────────────────────────────
+    # ── Open the output file automatically ─────────────────────────────────
     if not args.no_open:
         open_output(args.format, args.vault_name, vault_dir, out_path, args.output_language)
 

@@ -82,8 +82,8 @@ class AITimesCrawler:
         soup = BeautifulSoup(resp.text, "html.parser")
         articles = []
 
-        # AI Times 기사 목록: <section class="article-list"> 또는 <ul class="type"> 내 <li>
-        # 다양한 셀렉터 시도
+        # AI Times article lists usually use <section class="article-list"> or <ul class="type"> <li> elements.
+        # Try several selectors to tolerate layout changes.
         candidates = (
             soup.select("section.article-list li")
             or soup.select("ul.type li")
@@ -92,14 +92,14 @@ class AITimesCrawler:
             or soup.select("article")
         )
 
-        for item in candidates[:limit * 2]:  # 여유있게 파싱 후 limit 적용
+        for item in candidates[:limit * 2]:  # Parse extra candidates before applying the final limit.
             article = self._parse_item(item)
             if article and article.title:
                 articles.append(article.to_dict())
             if len(articles) >= limit:
                 break
 
-        # 위 셀렉터로 못 찾으면 <a> 태그에서 직접 추출
+        # Fall back to direct extraction from anchor elements.
         if not articles:
             articles = self._fallback_parse(soup, limit)
 
@@ -114,22 +114,22 @@ class AITimesCrawler:
         href = a_tag.get("href", "")
         url = href if href.startswith("http") else BASE_URL + href
 
-        # 제목
+        # Title
         title_tag = item.find(["h4", "h3", "h2", "strong", "span"])
         title = (title_tag.get_text(strip=True) if title_tag
                  else a_tag.get_text(strip=True))
         if not title or len(title) < 5:
             return None
 
-        # 요약
+        # Summary
         summary_tag = item.find("p")
         summary = summary_tag.get_text(strip=True) if summary_tag else ""
 
-        # 날짜
+        # Date
         date_tag = item.find(["time", "span"], class_=re.compile(r"date|time|ago", re.I))
         date = date_tag.get_text(strip=True) if date_tag else ""
 
-        # 카테고리
+        # Category
         cat_tag = item.find(["em", "span"], class_=re.compile(r"cat|section|tag", re.I))
         category = cat_tag.get_text(strip=True) if cat_tag else ""
 
@@ -142,7 +142,7 @@ class AITimesCrawler:
 
         for a in soup.find_all("a", href=True):
             href = a.get("href", "")
-            # AI Times 기사 URL 패턴: /news/articleView.html?idxno=...
+            # AI Times article URL pattern: /news/articleView.html?idxno=...
             if "articleView" not in href and "news" not in href:
                 continue
             url = href if href.startswith("http") else BASE_URL + href

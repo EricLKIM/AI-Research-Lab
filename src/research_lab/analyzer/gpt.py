@@ -102,8 +102,8 @@ class GPTAnalyzer:
         self.model    = model
         self.max_tokens = max_tokens
         self.timeout  = timeout
-        # 커스텀 엔드포인트 (사내 프록시, Azure OpenAI 호환 서버, 로컬 LLM 서버 등).
-        # 비어있으면 OpenAI 공식 엔드포인트를 그대로 사용한다.
+        # Optional custom endpoint for a proxy, Azure-compatible endpoint, or local LLM server.
+        # Use the official OpenAI endpoint when it is empty.
         self.base_url = base_url or None
 
     def analyze(

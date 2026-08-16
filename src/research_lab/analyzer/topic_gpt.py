@@ -79,7 +79,7 @@ class TopicAnalyzer:
         self,
         api_key: str,
         model: str = "gpt-5.4-nano",
-        max_tokens: int = 2000,
+        max_tokens: int = 4000,
         timeout: int = 60,
         base_url: str | None = None,
     ) -> None:
@@ -87,8 +87,8 @@ class TopicAnalyzer:
         self.model = model
         self.max_tokens = max_tokens
         self.timeout = timeout
-        # 커스텀 엔드포인트 (사내 프록시, Azure OpenAI 호환 서버, 로컬 LLM 서버 등).
-        # 비어있으면 OpenAI 공식 엔드포인트를 그대로 사용한다.
+        # Optional custom endpoint for a proxy, Azure-compatible endpoint, or local LLM server.
+        # Use the official OpenAI endpoint when it is empty.
         self.base_url = base_url or None
 
     def analyze(
@@ -138,16 +138,20 @@ class TopicAnalyzer:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as e:
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                detail = "응답 길이 제한으로 JSON이 중간에 잘렸습니다."
+            else:
+                detail = f"JSON 파싱 실패: {e}"
             return TopicAnalysisResult.error_result(
-                f"JSON 파싱 실패: {e}\n{raw[:200]}", today, topic
+                f"{detail}\n{raw[:200]}", today, topic
             )
 
         return TopicAnalysisResult(
             date=data.get("date", today),
-            # 주의: topic은 GPT가 JSON에 적어낸 값이 아니라 항상 사용자가 입력한 원래
-            # 주제어를 그대로 사용한다. GPT가 매번 표현을 조금씩 다르게 응답하면
-            # (예: "반도체" -> "반도체 산업") topic_formatter가 매번 다른 폴더를
-            # 만들어버리는 문제가 있었다.
+            # Always retain the user's original topic instead of GPT's JSON value.
+            # GPT can vary its wording (for example, a broad topic versus an industry label),
+            # which would otherwise create a different topic_formatter directory each run.
             topic=topic,
             trend_summary=data.get("trend_summary", []),
             highlights=data.get("highlights", []),
@@ -173,7 +177,8 @@ class TopicAnalyzer:
             f"수집 자료 중 개인/커뮤니티성 자료는 {gossip_count}건입니다. 이 자료는 사실로 단정하지 말고 "
             "주장·여론·소문·개인 의견의 신호로 취급하세요.\n"
             "위 자료들을 분석해서 요청한 JSON 형식으로 응답해주세요.\n"
-            "highlights는 최대 5개로 제한하고, gossip 자료를 근거로 삼을 때는 사실 확인이 필요한 주장임을 명시하세요. "
+            "응답은 간결하게 작성하세요: trend_summary는 최대 3개, highlights는 최대 5개이고 각 why_important는 한 문장만 작성하세요. "
+            "gossip 자료를 근거로 삼을 때는 사실 확인이 필요한 주장임을 명시하세요. "
             "suggested_search_queries에는 이 주제를 더 조사하기 위한 검색어 3개를 제안하세요. "
             "이 검색어는 반드시 사용자가 지정한 output_language로 작성하세요. English라면 영어 검색어를, 日本語라면 일본어 검색어를 사용하세요. "
             "검색어는 짧고 실제 Google 검색창에 바로 붙여 넣을 수 있는 형태로 작성하세요."
