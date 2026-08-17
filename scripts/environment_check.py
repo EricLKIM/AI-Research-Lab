@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-# Rich가 없어도 동작하도록 graceful fallback
+# Gracefully fall back when Rich is unavailable.
 try:
     from rich.console import Console
     from rich.table import Table
@@ -23,7 +23,7 @@ except ImportError:
     HAS_RICH = False
 
 
-# ── 설정 ───────────────────────────────────────────────────────────────────
+# ── Configuration ───────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent.parent
 
 REQUIRED_PYTHON = (3, 11)
@@ -50,7 +50,7 @@ REQUIRED_PATHS = [
 ]
 
 
-# ── 체크 함수들 ────────────────────────────────────────────────────────────
+# ── Check helpers ───────────────────────────────────────────────────────────
 def check_python_version() -> tuple[bool, str]:
     """Python 버전이 요구사항을 만족하는지 확인."""
     current = sys.version_info[:2]
@@ -102,7 +102,7 @@ def check_dotenv() -> tuple[bool, str]:
         return False, "python-dotenv 미설치 → uv sync 실행 필요"
 
 
-# ── 출력 ───────────────────────────────────────────────────────────────────
+# ── Output ──────────────────────────────────────────────────────────────────
 def print_results(
     python_ok: bool,
     python_msg: str,
@@ -119,7 +119,7 @@ def print_results(
     else:
         _print_plain(python_ok, python_msg, env_results, path_results, dotenv_ok, dotenv_msg)
 
-    # 전체 결과 판단
+    # Determine the overall result.
     if not python_ok:
         all_ok = False
     if not dotenv_ok:
@@ -137,7 +137,7 @@ def print_results(
 def _print_rich(python_ok, python_msg, env_results, path_results, dotenv_ok, dotenv_msg):
     console.print("\n[bold cyan]🔍 AI Research Lab — Environment Check[/bold cyan]\n")
 
-    # Python 버전
+    # Python version
     icon = "✅" if python_ok else "❌"
     console.print(f"  {icon} Python: {python_msg}")
 
@@ -145,13 +145,13 @@ def _print_rich(python_ok, python_msg, env_results, path_results, dotenv_ok, dot
     icon = "✅" if dotenv_ok else "⚠️ "
     console.print(f"  {icon} dotenv: {dotenv_msg}")
 
-    # 환경 변수
+    # Environment variables
     console.print("\n  [bold]환경 변수[/bold]")
     for var, ok, status in env_results:
         icon = "✅" if ok else "❌"
         console.print(f"    {icon} {var}: {status}")
 
-    # 경로
+    # Paths
     console.print("\n  [bold]필수 경로[/bold]")
     for path, ok, status in path_results:
         icon = "✅" if ok else "⚠️ "
@@ -170,7 +170,7 @@ def _print_plain(python_ok, python_msg, env_results, path_results, dotenv_ok, do
         print(f"    {'OK' if ok else 'WARN'} {path}: {status}")
 
 
-# ── 메인 ───────────────────────────────────────────────────────────────────
+# ── Main ────────────────────────────────────────────────────────────────────
 def main() -> int:
     dotenv_ok, dotenv_msg = check_dotenv()
     python_ok, python_msg = check_python_version()

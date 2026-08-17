@@ -69,7 +69,7 @@ def test_gossip_html_parsing():
 
     crawler = TopicNewsCrawler(gossip_ratio=100)
 
-    # 실제 HTTP 요청을 하지 않고 HTML 파싱 부분만 직접 테스트한다.
+    # Test HTML parsing directly without making an HTTP request.
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "html.parser")

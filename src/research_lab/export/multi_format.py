@@ -73,7 +73,7 @@ def _validate_lang(lang: str) -> str:
     return lang if lang in ("ko", "en") else "ko"
 
 
-# ── AI 리서치 다이제스트 (AI Times + HuggingFace) ─────────────────────────
+# ── Legacy AI research digest (AI Times + HuggingFace) ──────────────────────
 
 def save_digest(
     result: AnalysisResult, vault_dir: Path, fmt: str = DEFAULT_FORMAT, lang: str = "ko"
@@ -280,7 +280,7 @@ def _build_digest_docx(r: AnalysisResult, lang: str):
     return doc
 
 
-# ── 주제 리서치 ─────────────────────────────────────────────────────────
+# ── Topic Research ─────────────────────────────────────────────────────────
 
 def save_topic_digest(
     result: TopicAnalysisResult, vault_dir: Path, fmt: str = DEFAULT_FORMAT, lang: str = "ko"

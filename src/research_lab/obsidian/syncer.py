@@ -36,7 +36,7 @@ class MemorySyncer:
         self.target_dir = self.vault_dir / VAULT_SUBDIR
         self.dry_run    = dry_run
 
-    # ── 상태 ──────────────────────────────────────────────────────────────
+    # ── Status ────────────────────────────────────────────────────────────
 
     def get_status(self) -> list[dict]:
         """memory/와 vault/ 간의 동기화 상태 목록을 반환."""
@@ -59,7 +59,7 @@ class MemorySyncer:
         for item in self.get_status():
             print(f"  {icons.get(item['status'], '?')} {item['file']}: {item['status']}")
 
-    # ── 동기화 ────────────────────────────────────────────────────────────
+    # ── Synchronization ───────────────────────────────────────────────────
 
     def sync(self) -> list[SyncResult]:
         """증분 동기화: 변경/누락 파일만 복사한다."""
@@ -81,7 +81,7 @@ class MemorySyncer:
                 print(f"  ✅ synced {item['file']}")
                 results.append(SyncResult(item["file"], "synced"))
 
-        # 메타 기록
+        # Record metadata.
         if not self.dry_run:
             synced_count = sum(1 for r in results if r.status == "synced")
             self._write_meta(synced_count)

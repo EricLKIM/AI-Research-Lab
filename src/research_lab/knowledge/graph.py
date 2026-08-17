@@ -97,7 +97,7 @@ class KnowledgeGraph:
     자동 저장 컨텍스트 매니저:
         with KnowledgeGraph.open(path) as kg:
             kg.add_node(...)
-        # 블록 종료 시 자동 저장
+        # Save automatically when the context block exits.
     """
 
     def __init__(self, save_path: Path | None = None) -> None:
@@ -105,7 +105,7 @@ class KnowledgeGraph:
         self._edges: list[Edge] = []
         self._save_path = save_path
 
-    # ── 영속성 ────────────────────────────────────────────────────────────
+    # ── Persistence ───────────────────────────────────────────────────────
 
     @classmethod
     def load(cls, path: Path) -> "KnowledgeGraph":
@@ -156,7 +156,7 @@ class KnowledgeGraph:
         """with 문에서 사용할 컨텍스트 매니저를 반환한다."""
         return _KnowledgeGraphContext(path)
 
-    # ── 노드 조작 ─────────────────────────────────────────────────────────
+    # ── Node operations ───────────────────────────────────────────────────
 
     def add_node(self, node: Node) -> None:
         """노드를 추가한다. 같은 id면 덮어쓴다."""
@@ -184,13 +184,13 @@ class KnowledgeGraph:
         for key, value in kwargs.items():
             if hasattr(node, key):
                 object.__setattr__(node, key, value) if hasattr(node, "__dataclass_fields__") else setattr(node, key, value)
-        # dataclass는 mutable이므로 직접 수정
+        # Dataclasses are mutable, so update the instance directly.
         node_dict = node.to_dict()
         node_dict.update(kwargs)
         self._nodes[node_id] = Node.from_dict(node_dict)
         return True
 
-    # ── 엣지 조작 ─────────────────────────────────────────────────────────
+    # ── Edge operations ───────────────────────────────────────────────────
 
     def add_edge(self, edge: Edge) -> None:
         """엣지를 추가한다. 양쪽 노드가 존재해야 한다."""
@@ -198,7 +198,7 @@ class KnowledgeGraph:
             raise ValueError(f"소스 노드 없음: {edge.source_id}")
         if edge.target_id not in self._nodes:
             raise ValueError(f"타겟 노드 없음: {edge.target_id}")
-        # 중복 엣지 방지
+        # Prevent duplicate edges.
         for existing in self._edges:
             if (existing.source_id == edge.source_id and
                     existing.target_id == edge.target_id and
@@ -217,7 +217,7 @@ class KnowledgeGraph:
         ]
         return len(self._edges) < before
 
-    # ── 조회 ──────────────────────────────────────────────────────────────
+    # ── Lookups ───────────────────────────────────────────────────────────
 
     def get_related(self, node_id: str) -> list[tuple[Node, RelationType, str]]:
         """
@@ -259,7 +259,7 @@ class KnowledgeGraph:
             tags.update(node.tags)
         return sorted(tags)
 
-    # ── 통계 ──────────────────────────────────────────────────────────────
+    # ── Statistics ────────────────────────────────────────────────────────
 
     @property
     def node_count(self) -> int:

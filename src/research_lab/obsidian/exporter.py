@@ -41,7 +41,7 @@ from research_lab.knowledge.graph import KnowledgeGraph, Node, RelationType
 
 VAULT_KNOWLEDGE_DIR = "knowledge"
 
-# 한국어/영어 혼용 제목을 파일명으로 변환하는 함수
+# Convert mixed Korean/English titles into filesystem-safe names.
 _UNSAFE_CHARS = re.compile(r'[\\/:*?"<>|#^\[\]]')
 
 
@@ -49,7 +49,7 @@ def title_to_filename(title: str) -> str:
     """노드 제목을 Obsidian 안전 파일명으로 변환한다."""
     name = _UNSAFE_CHARS.sub("", title)
     name = name.strip().replace(" ", "-")
-    # 연속 하이픈 정리
+    # Collapse repeated hyphens.
     name = re.sub(r"-{2,}", "-", name)
     return name or "unnamed"
 
@@ -85,7 +85,7 @@ class GraphExporter:
         self.target_dir  = self.vault_dir / VAULT_KNOWLEDGE_DIR
         self.dry_run     = dry_run
 
-    # ── 상태 ──────────────────────────────────────────────────────────────
+    # ── Status ────────────────────────────────────────────────────────────
 
     def print_status(self) -> None:
         print("\n=== Knowledge Graph 내보내기 상태 ===")
@@ -98,7 +98,7 @@ class GraphExporter:
         existing = list(self.target_dir.glob("*.md")) if self.target_dir.exists() else []
         print(f"  📄 현재 vault/knowledge/에 있는 파일: {len(existing)}개")
 
-    # ── 변환 ──────────────────────────────────────────────────────────────
+    # ── Conversion ────────────────────────────────────────────────────────
 
     def _node_to_markdown(self, node: Node, kg: KnowledgeGraph) -> str:
         """노드 하나를 Obsidian 마크다운 문자열로 변환한다."""
@@ -114,10 +114,10 @@ class GraphExporter:
             f"---\n"
         )
 
-        # 본문
+        # Body
         body = f"\n# {node.title}\n\n{node.content}\n"
 
-        # 연결된 노드 섹션
+        # Connected-node section
         related = kg.get_related(node.id)
         links_section = ""
         if related:
@@ -129,7 +129,7 @@ class GraphExporter:
                 lines.append(f"- {arrow} [[{filename}]] ({label})")
             links_section = "\n".join(lines) + "\n"
 
-        # 태그 footer (Obsidian 태그 패널 연동)
+        # Tag footer for Obsidian's tag pane.
         tags_footer = ""
         if node.tags:
             tag_str = " ".join(f"#{t}" for t in node.tags)
@@ -154,7 +154,7 @@ class GraphExporter:
             "",
         ]
 
-        # 태그별로 그루핑
+        # Group by tag.
         all_tags = kg.get_all_tags()
         tagged_nodes: dict[str, list[Node]] = {tag: kg.search_by_tag(tag) for tag in all_tags}
         untagged = [n for n in kg._nodes.values() if not n.tags]
@@ -174,7 +174,7 @@ class GraphExporter:
                 lines.append(f"- [[{filename}]]")
             lines.append("")
 
-        # 관계 목록
+        # Relationship list
         lines += [
             "## 관계 목록",
             "",
@@ -192,7 +192,7 @@ class GraphExporter:
 
         return "\n".join(lines) + "\n"
 
-    # ── 내보내기 ──────────────────────────────────────────────────────────
+    # ── Export ────────────────────────────────────────────────────────────
 
     def export(self) -> list[ExportResult]:
         """
@@ -216,7 +216,7 @@ class GraphExporter:
 
         results: list[ExportResult] = []
 
-        # 노드별 .md 파일 생성
+        # Create one Markdown file per node.
         for node in kg._nodes.values():
             filename = title_to_filename(node.title) + ".md"
             target   = self.target_dir / filename

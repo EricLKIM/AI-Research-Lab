@@ -66,7 +66,7 @@ class MemoryLoader:
         self.memory_dir = Path(memory_dir)
         self._cache: dict[str, MemoryFile] | None = None
 
-    # ── 파싱 ──────────────────────────────────────────────────────────────
+    # ── Parsing ───────────────────────────────────────────────────────────
 
     def _parse_file(self, path: Path) -> MemoryFile:
         """마크다운 파일을 파싱해서 MemoryFile로 반환."""
@@ -102,7 +102,7 @@ class MemoryLoader:
             sections=sections,
         )
 
-    # ── 읽기 ──────────────────────────────────────────────────────────────
+    # ── Reading ───────────────────────────────────────────────────────────
 
     def load_all(self) -> dict[str, MemoryFile]:
         """모든 메모리 파일을 로드하고 캐시한다."""
@@ -128,11 +128,11 @@ class MemoryLoader:
 
     def get_file_path(self, filename: str) -> Path | None:
         """파일명으로 실제 경로를 반환. prefix도 허용 (예: '05')."""
-        # 정확한 파일명 매칭
+        # Exact filename match
         exact = self.memory_dir / filename
         if exact.exists():
             return exact
-        # prefix 매칭
+        # Prefix match
         for md_file in sorted(self.memory_dir.glob("*.md")):
             if re.match(rf"^{re.escape(filename)}", md_file.name):
                 return md_file
@@ -163,7 +163,7 @@ class MemoryLoader:
             print("=" * 60)
             print(mem_file.content)
 
-    # ── 쓰기 ──────────────────────────────────────────────────────────────
+    # ── Writing ───────────────────────────────────────────────────────────
 
     def write_section(self, filename: str, section_name: str, new_content: str) -> bool:
         """
@@ -186,17 +186,17 @@ class MemoryLoader:
 
         content = path.read_text(encoding="utf-8")
 
-        # 섹션 패턴: ## 섹션명 ~ 다음 ## 또는 footer(*마지막 업데이트) 또는 파일 끝
+        # Section pattern: heading through the next heading, footer, or end of file.
         pattern = rf"(## {re.escape(section_name)}\n)(.*?)(?=\n## |\n\*마지막|\Z)"
         replacement = rf"\g<1>{new_content}\n"
 
         new_content_full, count = re.subn(pattern, replacement, content, flags=re.DOTALL)
 
         if count == 0:
-            # 섹션이 없으면 파일 끝에 추가
+            # Add the section at the end when it does not exist.
             new_content_full = content.rstrip() + f"\n\n## {section_name}\n\n{new_content}\n"
 
-        # 마지막 업데이트 날짜 갱신
+        # Refresh the last-updated date.
         today = date.today().strftime("%Y-%m-%d")
         new_content_full = re.sub(
             r"\*마지막 업데이트: .*?\*",
@@ -228,7 +228,7 @@ class MemoryLoader:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         new_entry = f"\n### {now}\n- {log_entry}\n"
 
-        # 섹션 찾아서 끝에 추가
+        # Find the section and append to it.
         pattern = rf"(## {re.escape(section_name)}\n)(.*?)(?=\n## |\Z)"
 
         def add_entry(m: re.Match) -> str:
@@ -237,7 +237,7 @@ class MemoryLoader:
         new_content, count = re.subn(pattern, add_entry, content, flags=re.DOTALL)
 
         if count == 0:
-            # 섹션이 없으면 생성
+            # Create the section when it does not exist.
             new_content = content.rstrip() + f"\n\n## {section_name}\n{new_entry}"
 
         path.write_text(new_content, encoding="utf-8")
@@ -263,7 +263,7 @@ class MemoryLoader:
 
         content = path.read_text(encoding="utf-8")
 
-        # 테이블 행 패턴: | 태스크명 | 상태 | ... |
+        # Table-row pattern: | task name | status | ... |
         pattern = rf"(\|\s*{re.escape(task_name)}\s*\|\s*)([^|]+)(\|)"
         replacement = rf"\g<1>{new_status} \g<3>"
 
@@ -308,7 +308,7 @@ class MemoryLoader:
         self.invalidate_cache()
         return path
 
-    # ── 캐시 ──────────────────────────────────────────────────────────────
+    # ── Cache ─────────────────────────────────────────────────────────────
 
     def invalidate_cache(self) -> None:
         """캐시를 무효화한다 (파일 변경 후 재로드 필요 시)."""

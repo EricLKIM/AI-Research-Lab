@@ -23,7 +23,7 @@ _KOREAN_ALIASES = {
     "ko", "kr", "korean", "korean(ko)", "한국어", "국문", "한글",
 }
 
-# 설정 화면에 미리 보여줄 출력 언어 후보 (자유 입력도 가능하게 combobox는 editable로 둔다).
+# Output-language suggestions shown in Settings (the combobox remains editable).
 OUTPUT_LANGUAGE_PRESETS = [
     "한국어", "English", "日本語", "中文", "Español", "Français", "Deutsch", "Tiếng Việt",
 ]
@@ -31,8 +31,8 @@ OUTPUT_LANGUAGE_PRESETS = [
 DEFAULT_OUTPUT_LANGUAGE = "한국어"
 
 
-# Google 검색용 언어/지역 프로필. 출력 언어와 검색 언어를 최대한 일치시키고,
-# 지역 기반 결과가 필요한 경우 Google의 gl/hl/lr 파라미터에 전달한다.
+# Google search language/region profiles. Keep search and output languages aligned where possible,
+# then pass regional preferences through Google's gl/hl/lr parameters.
 GOOGLE_SEARCH_PROFILES = {
     "한국어": {"lang": "ko", "country": "KR", "lr": "lang_ko"},
     "ko": {"lang": "ko", "country": "KR", "lr": "lang_ko"},
@@ -81,7 +81,7 @@ def resolve_ui_lang(output_language: str | None) -> str:
     return "ko" if normalized in _KOREAN_ALIASES else "en"
 
 
-# ── 내보내기 파일에 들어가는 고정 틀 문구 (obsidian/markdown/text/html/docx 공용) ──
+# ── Fixed file-template strings shared by Obsidian/Markdown/text/HTML/DOCX exports ──
 
 FILE_STRINGS = {
     "ko": {
