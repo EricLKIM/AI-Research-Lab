@@ -47,6 +47,7 @@ os.environ["AI_RESEARCH_LAB_DATA_HOME"] = str(DATA_ROOT)
 sys.path.insert(0, str(ROOT / "src"))
 from research_lab.digest.topic_formatter import _slugify
 from research_lab.pending_backfills import pending_days
+from research_lab.backfill_policy import resolve_dump_scan_mode
 
 
 def pipeline_command(script: str, *arguments: str) -> list[str]:
@@ -58,10 +59,16 @@ def pipeline_command(script: str, *arguments: str) -> list[str]:
     return [str(executable), *arguments]
 
 
-def missing_snapshot_dates(topic: str, history_days: int) -> list[str]:
+def missing_snapshot_dates(
+    topic: str,
+    history_days: int,
+    scan_mode: str = "auto",
+    full_scan_max_days: int = 3,
+) -> list[str]:
     topic_dir = DATA_ROOT / "vault" / "topics" / _slugify(topic)
     snapshots = topic_dir / "snapshots"
     covered: set[date] = set()
+    full_covered: set[date] = set()
     snapshot_paths = snapshots.glob("*.json") if snapshots.exists() else []
     snapshot_paths = list(snapshot_paths)
     if not snapshot_paths:
@@ -81,16 +88,27 @@ def missing_snapshot_dates(topic: str, history_days: int) -> list[str]:
                 end_day = datetime.fromisoformat(end).date()
                 while cursor < end_day:
                     covered.add(cursor)
+                    if snapshot.get("backfill_scan_mode") == "full":
+                        full_covered.add(cursor)
                     cursor += timedelta(days=1)
             elif snapshot.get("collected_at"):
-                covered.add(datetime.fromisoformat(snapshot["collected_at"]).date())
+                collected_day = datetime.fromisoformat(snapshot["collected_at"]).date()
+                covered.add(collected_day)
+                if snapshot.get("backfill_scan_mode") == "full":
+                    full_covered.add(collected_day)
         except (OSError, ValueError, json.JSONDecodeError, TypeError):
             continue
-    baseline = min(covered, default=date.today())
+    required_scan_mode = resolve_dump_scan_mode(scan_mode, history_days, full_scan_max_days)
     return [
         (date.today() - timedelta(days=offset)).isoformat()
         for offset in range(history_days, 0, -1)
-        if date.today() - timedelta(days=offset) >= baseline and date.today() - timedelta(days=offset) not in covered
+        if (
+            date.today() - timedelta(days=offset) not in covered
+            or (
+                required_scan_mode == "full"
+                and date.today() - timedelta(days=offset) not in full_covered
+            )
+        )
     ]
 
 
@@ -106,7 +124,12 @@ def main() -> int:
         latest = max(snapshots.glob("*.json"), default=None) if snapshots.exists() else None
         missed_days = max(0, (datetime.now().astimezone() - datetime.fromtimestamp(latest.stat().st_mtime).astimezone()).days) if latest else int(settings.get("new_topic_backfill_days", 7))
         queued_dump_days = pending_days(DATA_ROOT / "vault", str(topic))
-        missing_dates = missing_snapshot_dates(str(topic), int(settings.get("new_topic_backfill_days", 7)))
+        missing_dates = missing_snapshot_dates(
+            str(topic),
+            int(settings.get("new_topic_backfill_days", 7)),
+            settings.get("dump_scan_mode", "auto"),
+            int(settings.get("dump_full_scan_max_days", 3)),
+        )
         if queued_dump_days:
             command = pipeline_command(
                 "backfill_gdelt_dump.py", "--topic", str(topic),
@@ -114,7 +137,9 @@ def main() -> int:
                 str(settings.get("new_topic_backfill_interval_days", 1)), "--daily-limit",
                 str(settings.get("backfill_daily_article_count", 5)), "--cache-policy",
                 settings.get("dump_cache_policy", "persistent"), "--data-dir", str(DATA_ROOT / "vault"), "--output-dir", output_dir,
-                "--scan-mode", settings.get("dump_scan_mode", "sample"),
+                "--compact-after-days", str(settings.get("dump_compact_after_days", 3)),
+                "--scan-mode", settings.get("dump_scan_mode", "auto"), "--full-scan-max-days",
+                str(settings.get("dump_full_scan_max_days", 3)),
                 "--output-language", settings.get("output_language", "한국어"), "--retry-pending",
             )
             # No --allow-http-fallback here: Windows scheduled tasks run without
@@ -128,7 +153,9 @@ def main() -> int:
                 str(settings.get("new_topic_backfill_interval_days", 1)), "--daily-limit",
                 str(settings.get("backfill_daily_article_count", 5)), "--cache-policy",
                 settings.get("dump_cache_policy", "persistent"), "--data-dir", str(DATA_ROOT / "vault"), "--output-dir", output_dir,
-                "--scan-mode", settings.get("dump_scan_mode", "sample"),
+                "--compact-after-days", str(settings.get("dump_compact_after_days", 3)),
+                "--scan-mode", settings.get("dump_scan_mode", "auto"), "--full-scan-max-days",
+                str(settings.get("dump_full_scan_max_days", 3)),
                 "--output-language", settings.get("output_language", "한국어"),
             ), cwd=ROOT, check=False)
         elif settings.get("backfill_method", "doc_api") != "gdelt_dump" and missed_days:

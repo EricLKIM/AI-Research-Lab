@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "topic": "AI",
+  "collected_at": "2026-08-10T09:00:00+09:00",
+  "window_start": "2026-08-09T09:00:00+09:00",
+  "window_end": "2026-08-10T09:00:00+09:00",
+  "output_language": "English",
+  "gossip_ratio": 20,
+  "backfill_scan_mode": "sample",
+  "article_count": 3,
+  "time_unknown_article_count": 0,
+  "time_unknown_articles": [],
+  "articles": [
+    {"source": "Northwind Technology Review", "title": "Fictional cloud operators outline a new inference capacity plan", "url": "https://news.example.org/ai/capacity-plan", "summary": "Synthetic sample article about inference capacity.", "date": "20260810T000000Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "US", "normalized_tags": ["ai", "ai-infrastructure", "inference"], "article_id": "sample-ai-001"},
+    {"source": "Example Policy Journal", "title": "Synthetic policy group proposes model evaluation reporting", "url": "https://policy.example.net/ai/evaluation-reporting", "summary": "Synthetic sample article about safety evaluation.", "date": "20260810T013000Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "GB", "normalized_tags": ["ai", "ai-safety", "model-evaluation"], "article_id": "sample-ai-002"},
+    {"source": "r/MachineLearning", "title": "Synthetic discussion: developers compare inference efficiency", "url": "https://community.example.com/r/ml/inference-efficiency", "summary": "Synthetic community signal, not a confirmed fact.", "date": "20260810T030000Z", "kind": "gossip", "time_status": "known", "platform": "reddit", "community": "r/MachineLearning", "source_region": "global", "normalized_tags": ["ai", "ai-infrastructure", "inference"], "article_id": "sample-ai-003"}
+  ]
+}

@@ -1,5 +1,5 @@
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 
 from research_lab.crawler.gdelt_dump import GdeltDumpCrawler
 
@@ -49,3 +49,47 @@ def test_balanced_sample_uses_five_evenly_spaced_utc_windows(tmp_path):
     selected = GdeltDumpCrawler._balanced_sample_entries(entries)
 
     assert [path.name[8:12] for _, path in selected] == ["0000", "0500", "1000", "1500", "2000"]
+
+
+def test_compact_persistent_keeps_five_balanced_blocks_for_old_cached_days(tmp_path):
+    day = date.today() - timedelta(days=10)
+    for clock in ("0000", "0300", "0500", "1000", "1500", "2000"):
+        (tmp_path / f"{day:%Y%m%d}{clock}00.gkg.csv.zip").touch()
+    crawler = GdeltDumpCrawler(tmp_path, cache_policy="compact_persistent", compact_after_days=3)
+
+    crawler.compact_existing_cache()
+
+    retained = sorted(path.name[8:12] for path in tmp_path.glob(f"{day:%Y%m%d}*.gkg.csv.zip"))
+    assert retained == ["0000", "0500", "1000", "1500", "2000"]
+
+
+def test_compact_persistent_preserves_recent_full_cached_days(tmp_path):
+    day = date.today() - timedelta(days=2)
+    for clock in ("0000", "0300", "0500", "1000", "1500", "2000"):
+        (tmp_path / f"{day:%Y%m%d}{clock}00.gkg.csv.zip").touch()
+    crawler = GdeltDumpCrawler(tmp_path, cache_policy="compact_persistent", compact_after_days=3)
+
+    crawler.compact_existing_cache()
+
+    assert len(list(tmp_path.glob(f"{day:%Y%m%d}*.gkg.csv.zip"))) == 6
+
+
+def test_full_scan_handles_all_master_list_blocks_without_sample_quotas(tmp_path, monkeypatch):
+    day = date(2026, 8, 15)
+    urls = [
+        f"http://example.com/{day:%Y%m%d}000000.gkg.csv.zip",
+        f"http://example.com/{day:%Y%m%d}001500.gkg.csv.zip",
+    ]
+    crawler = GdeltDumpCrawler(tmp_path)
+    for index, url in enumerate(urls):
+        path = tmp_path / url.rsplit("/", 1)[-1]
+        with zipfile.ZipFile(path, "w") as zipped:
+            zipped.writestr(
+                "sample.gkg.csv",
+                f"id\t20260815T0{index}0000Z\t1\texample.com\thttps://example.com/{index}\t\t\t\tECONOMY\n",
+            )
+    monkeypatch.setattr(crawler, "_day_archive_urls", lambda _day: urls)
+
+    articles = crawler.filter_day(day, "Economy", limit=5, scan_mode="full")
+
+    assert len(articles) == 2

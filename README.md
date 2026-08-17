@@ -43,6 +43,12 @@ The installed app checks GitHub Releases in the background at startup. It shows 
 
 The app does not run GPT trend analysis automatically. Scheduled collection is separate from manual analysis by design.
 
+## Sample vault (no API key)
+
+The repository includes a small [sample vault](sample_vault/) with synthetic snapshots, a seven-day baseline, and a trend-analysis note. It is useful for seeing the local file layout and Obsidian output before configuring any credentials.
+
+Open the Markdown files under `sample_vault/markdown/` directly, or copy the contents of `sample_vault/vault/` into a separate empty data vault to inspect the saved time-series inputs. The sample never contains scraped content, GDELT archives, API keys, or personal settings.
+
 ## Screens
 
 ### Topic Research
@@ -85,7 +91,21 @@ Start the desktop app:
 run_app.bat
 ```
 
-`diagnose_gui.bat` is available when the desktop app does not start. The repository also includes `run_topic_digest.bat` and `run_digest.bat` for the older command-line entry points.
+### Local LLM compatibility test (no model required)
+
+You can verify the OpenAI-compatible endpoint integration without installing Ollama, LM Studio, or a model. The following command starts a temporary loopback-only mock server, sends both Topic Research and Trend Analysis requests to it, checks JSON parsing, and verifies Topic Research Markdown output. It does not use an API key, run inference, or contact the internet.
+
+```powershell
+.venv\Scripts\python.exe scripts\test_local_llm_compat.py
+```
+
+For a manual GUI check, run the mock server in one terminal and set **OpenAI API Base** in Settings to the printed `http://127.0.0.1:<port>/v1` address. Restore the normal API base after the check.
+
+```powershell
+.venv\Scripts\python.exe scripts\mock_openai_server.py
+```
+
+`diagnose_gui.bat` is available when the desktop app does not start. `run_topic_digest.bat` is also available as a command-line entry point.
 
 ### Windows release build
 
@@ -136,6 +156,25 @@ Community sources are optional and are configured in **Advanced Settings**.
 | GDELT DOC | None | Public API; use conservatively because it can rate-limit |
 
 GDELT dump downloads use HTTPS first. Some environments currently encounter a certificate hostname mismatch from the GDELT host. The app pauses and asks for explicit approval before using HTTP for that manual run. Scheduled collection never approves HTTP automatically. HTTP is less secure and should only be used when you accept that risk.
+
+## Recommended personal setup
+
+These are the maintainer's suggested starting settings for general news and trend research. They are not intended as universal defaults; adjust them for your topic, available disk space, and API access.
+
+| Setting | Recommendation | Why |
+|---|---|---|
+| Gossip ratio | **20%** | Adds useful early signals and discussion without letting community material dominate the evidence set. |
+| Credibility evaluation | **Off** for normal research | It can filter out gossip and early signals. Turn it on when you are looking specifically for academic or higher-confidence material. |
+| Tavily Social | **On** when you have a Tavily API key | Recommended for convenient community coverage, including some Reddit and X-style social results. |
+| GDELT | **On** | Provides broad global-news coverage and supports backfill without an API key. |
+| Backfill method | `gdelt_dump` | Filters GDELT archive data locally and is better suited to longer historical collection. |
+| Dump cache | `compact_persistent` | Keeps recent raw blocks while reducing older full days to five balanced UTC blocks. |
+| Dump scan | `auto` | Uses full scanning for short backfills and balanced sampling for longer histories. |
+| Latest-news priority | `google_rss` | Keeps current collection fast and responsive. |
+| Google RSS regional mix | `balanced` | Mixes the selected language region with other regions to reduce geographic concentration. |
+| Scheduled collection | **09:00 and 21:00** | Provides a practical morning/evening cadence without excessive collection. |
+
+Tavily requires its own API key; GDELT does not. Community and social material remains a signal to investigate, not a replacement for independently reported evidence.
 
 ## Backfill and baselines
 

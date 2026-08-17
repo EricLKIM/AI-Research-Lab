@@ -523,7 +523,8 @@ def main() -> None:
     articles = tag_articles(articles, topic)
     print(f"  → {ui['collected'].format(count=len(articles))}")
     for a in articles:
-        print(f"     · {a['title'][:60]}")
+        origin = a.get("platform") or a.get("source") or "news"
+        print(f"     · [{origin}] {a['title'][:60]}")
 
     if not articles:
         print(f"\n  ❌ {ui['no_articles']}")

@@ -41,6 +41,7 @@ def test_time_series_snapshot() -> None:
             collected_at=collected_at,
             output_language="English",
             gossip_ratio=20,
+            backfill_scan_mode="full",
             time_unknown_articles=[
                 {
                     "title": "Undated community signal",
@@ -63,3 +64,4 @@ def test_time_series_snapshot() -> None:
         assert len(latest["articles"]) == 2
         assert latest["time_unknown_article_count"] == 1
         assert latest["time_unknown_articles"][0]["url"] == "https://example.com/unknown"
+        assert latest["backfill_scan_mode"] == "full"

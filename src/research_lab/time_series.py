@@ -78,6 +78,7 @@ def save_snapshot(
     output_language: str | None = None,
     gossip_ratio: int | None = None,
     time_unknown_articles: list[dict[str, Any]] | None = None,
+    backfill_scan_mode: str | None = None,
 ) -> Path:
     """
     Save one research collection as a time-series snapshot.
@@ -124,6 +125,7 @@ def save_snapshot(
         ),
         "output_language": output_language,
         "gossip_ratio": gossip_ratio,
+        "backfill_scan_mode": backfill_scan_mode,
         "article_count": len(normalized_articles),
         "articles": normalized_articles,
         "time_unknown_article_count": len(time_unknown_articles or []),

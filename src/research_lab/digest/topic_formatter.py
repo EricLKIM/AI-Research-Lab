@@ -92,6 +92,20 @@ class TopicDigestFormatter:
                     sections.append(f"- {why}")
                 sections.append("")
 
+        if r.collected_articles:
+            sections.append(f"## {s['topic_sources_heading']} ({len(r.collected_articles)})")
+            for article in r.collected_articles:
+                title = str(article.get("title") or "Untitled source")
+                url = str(article.get("url") or "")
+                source = str(article.get("source") or "")
+                platform = str(article.get("platform") or "")
+                kind = str(article.get("kind") or "")
+                date = str(article.get("date") or "")
+                details = " · ".join(value for value in (source, platform, kind, date) if value)
+                link = f"[{title}]({url})" if url else title
+                sections.append(f"- {link}" + (f" — {details}" if details else ""))
+            sections.append("")
+
         if r.suggested_search_queries:
             heading = "추천 검색어" if self.lang == "ko" else "Suggested Search Queries"
             sections.append(f"## {heading}")

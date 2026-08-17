@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "topic": "AI",
+  "collected_at": "2026-08-12T09:00:00+09:00",
+  "window_start": "2026-08-11T09:00:00+09:00",
+  "window_end": "2026-08-12T09:00:00+09:00",
+  "output_language": "English",
+  "gossip_ratio": 20,
+  "backfill_scan_mode": "sample",
+  "article_count": 3,
+  "time_unknown_article_count": 0,
+  "time_unknown_articles": [],
+  "articles": [
+    {"source": "Example Hardware Daily", "title": "Synthetic server vendors discuss accelerator supply planning", "url": "https://hardware.example.com/ai/accelerator-supply", "summary": "Synthetic sample article about accelerator supply.", "date": "20260812T001500Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "KR", "normalized_tags": ["ai", "ai-infrastructure", "accelerators"], "article_id": "sample-ai-004"},
+    {"source": "Example Research Wire", "title": "Synthetic benchmark group publishes a reproducibility checklist", "url": "https://research.example.edu/ai/reproducibility", "summary": "Synthetic sample article about model evaluation.", "date": "20260812T020000Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "JP", "normalized_tags": ["ai", "ai-safety", "model-evaluation"], "article_id": "sample-ai-005"},
+    {"source": "Hacker News", "title": "Synthetic discussion: operational costs of AI inference", "url": "https://news.ycombinator.example/item?id=10001", "summary": "Synthetic community signal about operating costs.", "date": "20260812T043000Z", "kind": "gossip", "time_status": "known", "platform": "hackernews", "community": "Hacker News", "source_region": "US", "normalized_tags": ["ai", "ai-infrastructure", "inference"], "article_id": "sample-ai-006"}
+  ]
+}

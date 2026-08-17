@@ -1,0 +1,12 @@
+{
+  "aliases": {
+    "ai_infrastructure": ["data center", "inference", "compute capacity"],
+    "ai_safety": ["model evaluation", "safety testing"],
+    "semiconductors": ["chip", "chips", "foundry"]
+  },
+  "parents": {
+    "ai_infrastructure": ["artificial_intelligence"],
+    "ai_safety": ["artificial_intelligence"],
+    "semiconductors": ["hardware"]
+  }
+}

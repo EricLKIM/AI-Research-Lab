@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "topic": "AI",
+  "collected_at": "2026-08-14T09:00:00+09:00",
+  "window_start": "2026-08-13T09:00:00+09:00",
+  "window_end": "2026-08-14T09:00:00+09:00",
+  "output_language": "English",
+  "gossip_ratio": 20,
+  "backfill_scan_mode": "full",
+  "article_count": 3,
+  "time_unknown_article_count": 0,
+  "time_unknown_articles": [],
+  "articles": [
+    {"source": "Example Datacenter Monitor", "title": "Synthetic regional data-center projects expand for AI workloads", "url": "https://datacenter.example.org/ai/regional-projects", "summary": "Synthetic sample article about regional data centers.", "date": "20260814T004500Z", "kind": "news", "time_status": "known", "platform": "gdelt_dump", "community": "", "source_region": "CN", "normalized_tags": ["ai", "ai-infrastructure", "data-center"], "article_id": "sample-ai-007"},
+    {"source": "Example Standards Forum", "title": "Synthetic standards proposal links model evaluation to deployment reviews", "url": "https://standards.example.org/ai/deployment-reviews", "summary": "Synthetic sample article about governance.", "date": "20260814T021500Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "US", "normalized_tags": ["ai", "ai-safety", "model-evaluation"], "article_id": "sample-ai-008"},
+    {"source": "Example Social Search", "title": "Synthetic community posts debate a new inference pricing model", "url": "https://social.example.net/ai/inference-pricing", "summary": "Synthetic social signal, not independently verified.", "date": "20260814T050000Z", "kind": "gossip", "time_status": "known", "platform": "tavily", "community": "combined", "source_region": "global", "normalized_tags": ["ai", "ai-infrastructure", "inference"], "article_id": "sample-ai-009"}
+  ]
+}

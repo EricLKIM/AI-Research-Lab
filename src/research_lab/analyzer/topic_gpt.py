@@ -9,7 +9,7 @@ GPT로 분석/정리하는 모듈. 기존 analyzer/gpt.py(AI 연구 특화)는 �
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from research_lab.i18n import language_instruction
 
@@ -47,6 +47,7 @@ class TopicAnalysisResult:
     suggested_search_queries: list[str]
     raw_response: str = ""
     error: str = ""
+    collected_articles: list[dict] = field(default_factory=list)
 
     @property
     def is_success(self) -> bool:
@@ -159,6 +160,7 @@ class TopicAnalyzer:
             suggested_tags=data.get("suggested_tags", []),
             suggested_search_queries=data.get("suggested_search_queries", []),
             raw_response=raw,
+            collected_articles=articles,
         )
 
     def _build_user_message(self, topic: str, articles: list[dict], today: str) -> str:

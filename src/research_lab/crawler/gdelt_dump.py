@@ -9,7 +9,7 @@ import re
 import sys
 import zipfile
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -43,10 +43,18 @@ class GdeltDumpCrawler:
         "entertainment": ("entertainment", "celebrity", "film", "music", "television"),
     }
 
-    def __init__(self, cache_dir: Path, timeout: int = 60, cache_policy: str = "persistent", allow_http_fallback: bool = False) -> None:
+    def __init__(
+        self,
+        cache_dir: Path,
+        timeout: int = 60,
+        cache_policy: str = "persistent",
+        compact_after_days: int = 3,
+        allow_http_fallback: bool = False,
+    ) -> None:
         self.cache_dir = cache_dir
         self.timeout = timeout
-        self.cache_policy = cache_policy if cache_policy in {"persistent", "temporary"} else "persistent"
+        self.cache_policy = cache_policy if cache_policy in {"persistent", "compact_persistent", "temporary"} else "persistent"
+        self.compact_after_days = max(1, min(int(compact_after_days), 365))
         # This is deliberately opt-in per manual run. Scheduled collection must
         # never downgrade a failed HTTPS request to HTTP.
         self.allow_http_fallback = allow_http_fallback
@@ -81,23 +89,79 @@ class GdeltDumpCrawler:
         except (OSError, json.JSONDecodeError):
             pass
 
+    def _record_cached_archives(self, day: date, paths: list[Path]) -> None:
+        """Update the cache inventory after compacting a day's raw blocks."""
+        try:
+            manifest = json.loads(self.manifest_path.read_text(encoding="utf-8")) if self.manifest_path.exists() else {}
+            if not isinstance(manifest, dict):
+                manifest = {}
+            manifest[day.isoformat()] = {
+                "filenames": [path.name for path in paths],
+                "size": sum(path.stat().st_size for path in paths if path.exists()),
+            }
+            self.manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        except (OSError, json.JSONDecodeError):
+            pass
+
     def release_day(self, day: date) -> None:
-        """Delete processed source data only in the laptop-friendly temporary mode."""
-        if self.cache_policy != "temporary":
+        """Release raw GDELT blocks according to the selected cache policy."""
+        if self.cache_policy == "temporary":
+            for path in self._cached_day_paths(day):
+                try:
+                    path.unlink(missing_ok=True)
+                    print(f"  [GDELT dump] temporary archive removed: {path.name}", flush=True)
+                except OSError as error:
+                    print(f"  [Warning] cannot remove temporary archive {path.name}: {error}", flush=True)
+        elif self.cache_policy == "compact_persistent":
+            self._compact_day(day)
+
+    def compact_existing_cache(self) -> None:
+        """Apply compact-persistent retention to cached history from older runs."""
+        if self.cache_policy != "compact_persistent" or not self.cache_dir.exists():
             return
-        for path in self.cache_dir.glob(f"{day:%Y%m%d}*.gkg.csv.zip"):
+        days: set[date] = set()
+        for path in self.cache_dir.glob("*.gkg.csv.zip"):
+            try:
+                days.add(date.fromisoformat(f"{path.name[:4]}-{path.name[4:6]}-{path.name[6:8]}"))
+            except (ValueError, IndexError):
+                continue
+        for day in sorted(days):
+            self._compact_day(day)
+
+    def _cached_day_paths(self, day: date) -> list[Path]:
+        return sorted(self.cache_dir.glob(f"{day:%Y%m%d}*.gkg.csv.zip"))
+
+    def _compact_day(self, day: date) -> None:
+        """Keep five balanced raw blocks for an old day, while preserving recent full days."""
+        if (date.today() - day).days < self.compact_after_days:
+            return
+        paths = self._cached_day_paths(day)
+        if len(paths) <= len(self.SAMPLE_WINDOW_UTC):
+            return
+        entries = [(None, path) for path in paths]
+        keep = {path for _, path in self._balanced_sample_entries(entries)}
+        removed = 0
+        for path in paths:
+            if path in keep:
+                continue
             try:
                 path.unlink(missing_ok=True)
-                print(f"  [GDELT dump] temporary archive removed: {path.name}", flush=True)
+                removed += 1
             except OSError as error:
-                print(f"  [Warning] cannot remove temporary archive {path.name}: {error}", flush=True)
+                print(f"  [Warning] cannot compact cached archive {path.name}: {error}", flush=True)
+        if removed:
+            self._record_cached_archives(day, sorted(keep))
+            print(
+                f"  [GDELT dump] compact cache: retained {len(keep)} balanced blocks, removed {removed} for {day}",
+                flush=True,
+            )
 
     def download_day(self, day: date) -> Path | None:
         """Backward-compatible helper returning the first available archive for a day."""
         target = self.archive_path(day)
         if target.exists() and self._is_valid_zip(target):
             print(f"  [GDELT dump] cache hit: {target.name}", flush=True)
-            if self.cache_policy == "persistent":
+            if self.cache_policy != "temporary":
                 self._record_cached_archive(day, target)
             return target
         paths = self._download_day_archives(day)
@@ -155,14 +219,13 @@ class GdeltDumpCrawler:
         selected: list[tuple[str | None, Path]] = []
         for target in cls.SAMPLE_WINDOW_UTC:
             def distance(entry: tuple[str | None, Path]) -> int:
-                name = entry[1].name
-                clock = name[8:12] if len(name) >= 12 else "0000"
+                clock = cls._archive_clock(entry[1])
                 return abs(int(clock[:2]) * 60 + int(clock[2:]) - (int(target[:2]) * 60 + int(target[2:])))
             candidate = min(entries, key=distance, default=None)
             if candidate is not None and candidate not in selected:
                 selected.append(candidate)
         if selected:
-            labels = ", ".join(path.name[8:12] for _, path in selected)
+            labels = ", ".join(cls._archive_clock(path) for _, path in selected)
             print(f"  [GDELT dump] balanced sample windows (UTC): {labels}", flush=True)
         return selected
 
@@ -170,16 +233,21 @@ class GdeltDumpCrawler:
     def _fallback_sample_entries(cls, entries: list[tuple[str | None, Path]]) -> list[tuple[str | None, Path]]:
         """Order extra blocks by proximity to one of the balanced UTC windows."""
         def distance(entry: tuple[str | None, Path]) -> int:
-            name = entry[1].name
-            clock = name[8:12] if len(name) >= 12 else "0000"
+            clock = cls._archive_clock(entry[1])
             minute = int(clock[:2]) * 60 + int(clock[2:])
             return min(abs(minute - (int(target[:2]) * 60 + int(target[2:]))) for target in cls.SAMPLE_WINDOW_UTC)
         return sorted(entries, key=distance)
 
+    @staticmethod
+    def _archive_clock(path: Path) -> str:
+        """Extract HHMM from a GDELT block filename, including legacy daily files."""
+        clock = path.name[8:12]
+        return clock if len(clock) == 4 and clock.isdigit() else "0000"
+
     def _download_archive(self, day: date, url: str, target: Path) -> Path | None:
         if target.exists() and self._is_valid_zip(target):
             print(f"  [GDELT dump] cache hit: {target.name}", flush=True)
-            if self.cache_policy == "persistent":
+            if self.cache_policy != "temporary":
                 self._record_cached_archive(day, target)
             return target
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -195,7 +263,7 @@ class GdeltDumpCrawler:
             if not self._is_valid_zip(temporary):
                 raise zipfile.BadZipFile("downloaded archive failed ZIP validation")
             temporary.replace(target)
-            if self.cache_policy == "persistent":
+            if self.cache_policy != "temporary":
                 self._record_cached_archive(day, target)
         except (OSError, requests.RequestException, zipfile.BadZipFile) as error:
             self.last_failure = error
@@ -272,7 +340,11 @@ class GdeltDumpCrawler:
                 break
             if not full_scan and archive_index == primary_sample_count and len(results) < limit:
                 print(f"  [GDELT dump] balanced windows yielded {len(results)}/{limit}; checking nearby blocks for the shortfall", flush=True)
-            slot_limit = sample_quotas[archive_index] if archive_index < primary_sample_count else limit - len(results)
+            slot_limit = (
+                limit
+                if full_scan
+                else sample_quotas[archive_index] if archive_index < primary_sample_count else limit - len(results)
+            )
             if not full_scan and slot_limit <= 0:
                 continue
             archive_path = candidate_path if archive_url is None else self._download_archive(day, archive_url, candidate_path)

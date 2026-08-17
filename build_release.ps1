@@ -50,7 +50,8 @@ function Invoke-PipelineBuild {
         "--workpath", $WorkRoot,
         "--specpath", $SpecRoot,
         "--paths", (Join-Path $ProjectRoot "src"),
-        "--collect-data", "tzdata"
+        "--collect-data", "tzdata",
+        "--collect-all", "tavily_agent_toolkit"
     )
     if ($Windowed) { $Arguments += "--windowed" }
     if ($UseIcon) { $Arguments += @("--icon", (Join-Path $ProjectRoot "topic.ico")) }
@@ -67,7 +68,6 @@ function Invoke-PipelineBuild {
 }
 
 Invoke-PipelineBuild -Name "AI Research Lab" -Script "scripts\app.py" -Windowed -UseIcon
-Invoke-PipelineBuild -Name "AI Research Digest" -Script "scripts\research_digest.py"
 Invoke-PipelineBuild -Name "Topic Research" -Script "scripts\topic_digest.py"
 Invoke-PipelineBuild -Name "GDELT Dump Backfill" -Script "scripts\backfill_gdelt_dump.py"
 Invoke-PipelineBuild -Name "DOC API Backfill" -Script "scripts\backfill_topic.py"
@@ -80,7 +80,6 @@ Copy-Item -Path (Join-Path $StageRoot "AI Research Lab\*") -Destination $Release
 $PipelineRoot = Join-Path $ReleaseRoot "pipelines"
 New-Item -ItemType Directory -Path $PipelineRoot | Out-Null
 $PipelineFolders = @{
-    "AI Research Digest" = "research_digest"
     "Topic Research" = "topic_digest"
     "GDELT Dump Backfill" = "backfill_gdelt_dump"
     "DOC API Backfill" = "backfill_topic"

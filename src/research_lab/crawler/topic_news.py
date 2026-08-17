@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 from research_lab.crawler.hacker_news import HackerNewsCrawler
 from research_lab.crawler.gdelt import GdeltCrawler
 from research_lab.crawler.reddit import RedditCrawler
+from research_lab.crawler.tavily import TavilySocialCrawler
 from research_lab.crawler.x import XCrawler
 from research_lab.crawler.youtube import YouTubeCrawler
 
@@ -90,6 +91,7 @@ class TopicNewsCrawler:
                  include_time_unknown: bool = False,
                  allow_google_gossip_fallback: bool = True,
                  community_sources: set[str] | None = None,
+                 tavily_crawler: TavilySocialCrawler | None = None,
                  reddit_crawler: RedditCrawler | None = None,
                  x_crawler: XCrawler | None = None,
                  youtube_crawler: YouTubeCrawler | None = None,
@@ -123,6 +125,7 @@ class TopicNewsCrawler:
         )
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
+        self.tavily_crawler = tavily_crawler or TavilySocialCrawler.from_environment()
         self.reddit_crawler = reddit_crawler or RedditCrawler.from_environment(timeout=timeout)
         self.x_crawler = x_crawler or XCrawler.from_environment(timeout=timeout)
         self.youtube_crawler = youtube_crawler or YouTubeCrawler.from_environment(timeout=timeout)
@@ -139,6 +142,7 @@ class TopicNewsCrawler:
     def get_community_source_status(self, topic: str) -> list[dict[str, str]]:
         """Return the effective community-source state for a topic without calling APIs."""
         sources = [
+            ("tavily", self.tavily_crawler.is_configured, True),
             ("reddit", self.reddit_crawler.is_configured, True),
             ("x", self.x_crawler.is_configured, True),
             ("youtube", self.youtube_crawler.is_configured, True),
@@ -442,6 +446,41 @@ class TopicNewsCrawler:
         window_start: datetime | None = None,
         window_end: datetime | None = None,
     ) -> list[dict]:
+        results: list[dict] = []
+        seen_urls: set[str] = set()
+
+        # Tavily provides a single optional social-discovery path across Reddit
+        # and X, so it receives the gossip allocation before individual APIs.
+        # It is not used when a historical time window is requested.
+        if (
+            window_start is None
+            and window_end is None
+            and "tavily" in self.community_sources
+            and self.tavily_crawler.is_configured
+        ):
+            tavily_articles = self.tavily_crawler.fetch(topic, limit)
+            platform_counts: dict[str, int] = {}
+            for article in tavily_articles:
+                if article["url"] not in seen_urls:
+                    results.append(article)
+                    seen_urls.add(article["url"])
+                    platform = str(article.get("platform") or "tavily").lower()
+                    platform_counts[platform] = platform_counts.get(platform, 0) + 1
+            platform_summary = ", ".join(
+                f"{platform}={count}" for platform, count in sorted(platform_counts.items())
+            ) or "no matching public posts"
+            print(
+                f"  [Tavily Social] candidates={len(results)}; platforms: {platform_summary}; "
+                "priority gossip source",
+                flush=True,
+            )
+            if len(results) >= limit:
+                return results
+
+        remaining = limit - len(results)
+        if remaining <= 0:
+            return results
+
         crawlers = []
         if "reddit" in self.community_sources and self.reddit_crawler.is_configured:
             crawlers.append(self.reddit_crawler)
@@ -456,9 +495,7 @@ class TopicNewsCrawler:
             crawlers.append(self.hacker_news_crawler)
 
         if crawlers:
-            results: list[dict] = []
-            seen_urls: set[str] = set()
-            per_source_limit = max(1, (limit + len(crawlers) - 1) // len(crawlers))
+            per_source_limit = max(1, (remaining + len(crawlers) - 1) // len(crawlers))
             for crawler in crawlers:
                 if window_start is None and window_end is None:
                     fetched_articles = crawler.fetch(topic, per_source_limit)
@@ -477,8 +514,13 @@ class TopicNewsCrawler:
                         return results
             return results
         if self.allow_google_gossip_fallback:
-            return self._fetch_google_gossip(topic, limit)
-        return []
+            for article in self._fetch_google_gossip(topic, remaining):
+                if article["url"] not in seen_urls:
+                    results.append(article)
+                    seen_urls.add(article["url"])
+                if len(results) >= limit:
+                    break
+        return results
 
     def _fetch_google_gossip(self, topic: str, limit: int) -> list[dict]:
         lang_key = self.lang if self.lang in GOSSIP_TERMS else self.lang.split("-")[0]

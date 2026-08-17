@@ -1,6 +1,7 @@
 from research_lab.crawler.hacker_news import HackerNewsCrawler
 from research_lab.crawler.gdelt import GdeltCrawler
 from research_lab.crawler.reddit import RedditCrawler
+from research_lab.crawler.tavily import TavilySocialCrawler
 from research_lab.crawler.topic_news import TopicNewsCrawler
 from research_lab.crawler.x import XCrawler
 from research_lab.crawler.youtube import YouTubeCrawler
@@ -21,6 +22,40 @@ class FakeHackerNewsCrawler:
             "time_status": "known",
             "platform": "hackernews",
             "community": "Hacker News",
+        }]
+
+
+class FakeTavilyCrawler:
+    is_configured = True
+
+    def fetch(self, topic, limit, **_ignored):
+        return [{
+            "source": "Reddit via Tavily",
+            "title": f"{topic} discussion found by Tavily",
+            "url": "https://www.reddit.com/r/example/comments/tavily",
+            "summary": "Social discovery result",
+            "date": "2026-08-14T00:00:00+00:00",
+            "kind": "gossip",
+            "time_status": "known",
+            "platform": "reddit",
+            "community": "Reddit",
+        }]
+
+
+class FakeRedditCrawler:
+    is_configured = True
+
+    def fetch(self, topic, limit, **_ignored):
+        return [{
+            "source": "r/example",
+            "title": f"{topic} direct API discussion",
+            "url": "https://www.reddit.com/r/example/comments/direct",
+            "summary": "Direct source result",
+            "date": "2026-08-14T00:00:00+00:00",
+            "kind": "gossip",
+            "time_status": "known",
+            "platform": "reddit",
+            "community": "r/example",
         }]
 
 
@@ -49,6 +84,24 @@ def test_empty_community_source_setting_does_not_enable_default_sources():
     crawler = TopicNewsCrawler(community_sources=set())
 
     assert crawler.community_sources == set()
+
+
+def test_tavily_social_is_prioritized_before_direct_community_apis(monkeypatch):
+    crawler = TopicNewsCrawler(
+        gossip_ratio=100,
+        gossip_mode="strict",
+        community_sources={"tavily", "reddit"},
+        tavily_crawler=FakeTavilyCrawler(),
+        reddit_crawler=FakeRedditCrawler(),
+    )
+    monkeypatch.setattr(crawler, "_fetch_news", lambda topic, limit: [])
+
+    results = crawler.fetch("AI", limit=2)
+
+    assert [item["title"] for item in results] == [
+        "AI discussion found by Tavily",
+        "AI direct API discussion",
+    ]
 
 
 def test_google_rss_priority_skips_gdelt_when_rss_has_enough_news(monkeypatch):
@@ -102,6 +155,7 @@ def test_source_status_reports_disabled_missing_and_topic_specific_sources():
     }
 
     assert status == {
+        "tavily": "disabled",
         "reddit": "credentials_missing",
         "x": "disabled",
         "youtube": "disabled",
@@ -111,6 +165,7 @@ def test_source_status_reports_disabled_missing_and_topic_specific_sources():
 
 
 def test_connection_validation_reports_missing_credentials_without_requests():
+    assert TavilySocialCrawler().validate_connection() == (False, "credentials missing")
     assert RedditCrawler().validate_connection() == (False, "credentials missing")
     assert XCrawler().validate_connection() == (False, "credentials missing")
     assert YouTubeCrawler().validate_connection() == (False, "credentials missing")

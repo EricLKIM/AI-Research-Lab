@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "topic": "AI",
+  "collected_at": "2026-08-16T09:00:00+09:00",
+  "window_start": "2026-08-15T09:00:00+09:00",
+  "window_end": "2026-08-16T09:00:00+09:00",
+  "output_language": "English",
+  "gossip_ratio": 20,
+  "backfill_scan_mode": "full",
+  "article_count": 3,
+  "time_unknown_article_count": 0,
+  "time_unknown_articles": [],
+  "articles": [
+    {"source": "Example Finance Desk", "title": "Synthetic infrastructure financing highlights power and cooling constraints", "url": "https://finance.example.com/ai/power-cooling", "summary": "Synthetic sample article about infrastructure constraints.", "date": "20260816T010000Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "US", "normalized_tags": ["ai", "ai-infrastructure", "data-center"], "article_id": "sample-ai-010"},
+    {"source": "Example Safety Lab", "title": "Synthetic lab releases a deployment evaluation guide", "url": "https://safety.example.edu/ai/deployment-guide", "summary": "Synthetic sample article about safety guidance.", "date": "20260816T033000Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "KR", "normalized_tags": ["ai", "ai-safety", "model-evaluation"], "article_id": "sample-ai-011"},
+    {"source": "r/LocalLLaMA", "title": "Synthetic discussion: smaller models move to local inference", "url": "https://community.example.com/r/localllama/local-inference", "summary": "Synthetic community signal about local inference.", "date": "20260816T060000Z", "kind": "gossip", "time_status": "known", "platform": "reddit", "community": "r/LocalLLaMA", "source_region": "global", "normalized_tags": ["ai", "ai-infrastructure", "local-models"], "article_id": "sample-ai-012"}
+  ]
+}

@@ -10,6 +10,7 @@ Fail-fast 원칙: 필수 변수 누락 시 앱 시작 시점에 즉시 오류 �
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,11 +21,29 @@ except ImportError:
     _DOTENV_AVAILABLE = False
 
 
+def _env_file() -> Path:
+    """Return the per-user environment file for installed builds."""
+    configured_data_home = os.environ.get("AI_RESEARCH_LAB_DATA_HOME")
+    if configured_data_home:
+        return Path(configured_data_home) / ".env"
+
+    if getattr(sys, "frozen", False):
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        data_root = (
+            Path(local_app_data)
+            if local_app_data
+            else Path.home() / "AppData" / "Local"
+        )
+        return data_root / "AI Research Lab" / ".env"
+
+    return Path(__file__).parent.parent.parent.parent / ".env"
+
+
 def _load_env() -> None:
-    """프로젝트 루트의 .env 파일을 로드한다."""
+    """Load the applicable environment file."""
     if not _DOTENV_AVAILABLE:
         return
-    env_file = Path(__file__).parent.parent.parent.parent / ".env"
+    env_file = _env_file()
     if env_file.exists():
         load_dotenv(env_file)
 
@@ -45,7 +64,7 @@ def load_env_value(key: str) -> str:
     if value is not None and value.strip():
         return value.strip()
 
-    env_file = Path(__file__).parent.parent.parent.parent / ".env"
+    env_file = _env_file()
     if not env_file.exists():
         return ""
 

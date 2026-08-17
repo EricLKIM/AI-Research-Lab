@@ -18,6 +18,9 @@ build/
 dist/
 /installer/
 
+# Reserved for the separately released, legacy one-click AI Digest project.
+/ai-digest-standalone/
+
 # Test, log, and temporary artifacts
 .pytest_cache/
 .coverage

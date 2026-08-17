@@ -339,6 +339,20 @@ def _topic_markdown(r: TopicAnalysisResult, lang: str) -> str:
                 lines.append(f"- {h['why_important']}")
             lines.append("")
 
+    if r.collected_articles:
+        lines.append(f"## {s['topic_sources_heading']} ({len(r.collected_articles)})")
+        for article in r.collected_articles:
+            title = str(article.get("title") or "Untitled source")
+            url = str(article.get("url") or "")
+            source = str(article.get("source") or "")
+            platform = str(article.get("platform") or "")
+            kind = str(article.get("kind") or "")
+            date = str(article.get("date") or "")
+            details = " · ".join(value for value in (source, platform, kind, date) if value)
+            link = f"[{title}]({url})" if url else title
+            lines.append(f"- {link}" + (f" — {details}" if details else ""))
+        lines.append("")
+
     if r.key_takeaways:
         lines.append(f"## {s['topic_takeaways_heading']}")
         lines += [f"- {t}" for t in r.key_takeaways]

@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "topic": "Semiconductors",
+  "collected_at": "2026-08-13T09:00:00+09:00",
+  "window_start": "2026-08-12T09:00:00+09:00",
+  "window_end": "2026-08-13T09:00:00+09:00",
+  "output_language": "English",
+  "gossip_ratio": 0,
+  "backfill_scan_mode": "sample",
+  "article_count": 3,
+  "time_unknown_article_count": 0,
+  "time_unknown_articles": [],
+  "articles": [
+    {"source": "Example Foundry Report", "title": "Synthetic foundry capacity update cites AI accelerator demand", "url": "https://chips.example.org/foundry/ai-demand", "summary": "Synthetic cross-topic evidence.", "date": "20260813T020000Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "TW", "normalized_tags": ["semiconductors", "accelerators", "ai-infrastructure"], "article_id": "sample-chip-001"},
+    {"source": "Example Supply Chain Review", "title": "Synthetic packaging capacity becomes a planning constraint", "url": "https://supply.example.net/chips/packaging", "summary": "Synthetic cross-topic evidence.", "date": "20260813T043000Z", "kind": "news", "time_status": "known", "platform": "gdelt_dump", "community": "", "source_region": "US", "normalized_tags": ["semiconductors", "packaging", "ai-infrastructure"], "article_id": "sample-chip-002"},
+    {"source": "Example Market Note", "title": "Synthetic investors track accelerator delivery schedules", "url": "https://markets.example.com/chips/deliveries", "summary": "Synthetic cross-topic evidence.", "date": "20260813T061500Z", "kind": "news", "time_status": "known", "platform": "google_rss", "community": "", "rss_region": "US", "normalized_tags": ["semiconductors", "accelerators"], "article_id": "sample-chip-003"}
+  ]
+}
