@@ -5,12 +5,39 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+def _project_root() -> Path:
+    if getattr(sys, "frozen", False):
+        configured = os.environ.get("AI_RESEARCH_LAB_HOME")
+        if configured:
+            return Path(configured).resolve()
+        executable_dir = Path(sys.executable).resolve().parent
+        for candidate in (executable_dir, *executable_dir.parents):
+            if (candidate / "AI Research Lab.exe").exists():
+                return candidate
+        return executable_dir
+    return Path(__file__).resolve().parent.parent
+
+
+PROJECT_ROOT = _project_root()
+
+
+def _app_data_root() -> Path:
+    if getattr(sys, "frozen", False):
+        configured = os.environ.get("AI_RESEARCH_LAB_DATA_HOME")
+        if configured:
+            return Path(configured).resolve()
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        return (Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local") / "AI Research Lab"
+    return PROJECT_ROOT
+
+
+APP_DATA_ROOT = _app_data_root()
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from research_lab.crawler.gdelt_dump import GdeltDumpCrawler
@@ -30,11 +57,11 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--daily-limit", type=int, default=5, help="target number of articles per calendar day")
     parser.add_argument("--keywords", default="", help="comma-separated additional local filter keywords")
-    parser.add_argument("--cache-dir", default=str(PROJECT_ROOT / "vault" / "gdelt-cache"))
+    parser.add_argument("--cache-dir", default=str(APP_DATA_ROOT / "vault" / "gdelt-cache"))
     parser.add_argument("--cache-policy", choices=["persistent", "temporary"], default="persistent")
     parser.add_argument("--scan-mode", choices=["sample", "full"], default="sample",
                         help="sample stops after the target count; full checks every 15-minute block")
-    parser.add_argument("--data-dir", default=str(PROJECT_ROOT / "vault"))
+    parser.add_argument("--data-dir", default=str(APP_DATA_ROOT / "vault"))
     parser.add_argument("--output-dir", default=None, help="human-readable Markdown output directory")
     parser.add_argument("--output-language", default=DEFAULT_OUTPUT_LANGUAGE)
     parser.add_argument("--dry-run", action="store_true")

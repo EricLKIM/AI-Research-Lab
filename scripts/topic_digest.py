@@ -26,7 +26,33 @@ import webbrowser
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+def _project_root() -> Path:
+    if getattr(sys, "frozen", False):
+        configured = os.environ.get("AI_RESEARCH_LAB_HOME")
+        if configured:
+            return Path(configured).resolve()
+        executable_dir = Path(sys.executable).resolve().parent
+        for candidate in (executable_dir, *executable_dir.parents):
+            if (candidate / "AI Research Lab.exe").exists():
+                return candidate
+        return executable_dir
+    return Path(__file__).resolve().parent.parent
+
+
+PROJECT_ROOT = _project_root()
+
+
+def _app_data_root() -> Path:
+    if getattr(sys, "frozen", False):
+        configured = os.environ.get("AI_RESEARCH_LAB_DATA_HOME")
+        if configured:
+            return Path(configured).resolve()
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        return (Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local") / "AI Research Lab"
+    return PROJECT_ROOT
+
+
+APP_DATA_ROOT = _app_data_root()
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Windows consoles can raise UnicodeEncodeError for emoji under legacy code pages.
@@ -54,7 +80,7 @@ def load_api_key() -> str:
     import os
     try:
         from dotenv import load_dotenv
-        load_dotenv(PROJECT_ROOT / ".env")
+        load_dotenv(APP_DATA_ROOT / ".env")
     except ImportError:
         pass
     key = os.environ.get("OPENAI_API_KEY", "")
@@ -70,7 +96,7 @@ def load_api_base() -> str | None:
     import os
     try:
         from dotenv import load_dotenv
-        load_dotenv(PROJECT_ROOT / ".env")
+        load_dotenv(APP_DATA_ROOT / ".env")
     except ImportError:
         pass
     base = os.environ.get("OPENAI_API_BASE", "").strip()
@@ -424,19 +450,19 @@ def main() -> None:
     args = parser.parse_args()
     try:
         from dotenv import load_dotenv
-        load_dotenv(PROJECT_ROOT / ".env")
+        load_dotenv(APP_DATA_ROOT / ".env")
     except ImportError:
         pass
     ui = console_strings(args.output_language)
 
     today = date.today().isoformat()
-    vault_dir = Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "vault"
+    vault_dir = Path(args.output_dir) if args.output_dir else APP_DATA_ROOT / "vault"
     data_dir = Path(args.data_dir) if args.data_dir else vault_dir
     run_credibility = args.credibility_check and not args.dry_run
     total_steps = 2 if args.dry_run else (4 if run_credibility else 3)
 
     topic = args.topic or select_topic_interactively(
-        PROJECT_ROOT / "topics_favorites.json", args.output_language
+        APP_DATA_ROOT / "topics_favorites.json", args.output_language
     )
 
     print(f"\n{'='*50}")

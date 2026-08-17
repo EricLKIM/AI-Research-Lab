@@ -5,8 +5,10 @@ later vocabulary update can be applied without downloading articles again.
 """
 from __future__ import annotations
 
-import re
 import json
+import os
+import re
+import sys
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -48,6 +50,13 @@ _dictionary_cache: tuple[Path, float, dict] | None = None
 
 def dictionary_path() -> Path:
     """The editable dictionary lives with machine-readable research data."""
+    configured = os.environ.get("AI_RESEARCH_LAB_DATA_HOME")
+    if configured:
+        return Path(configured) / "vault" / "tag_dictionary.json"
+    if getattr(sys, "frozen", False):
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return base / "AI Research Lab" / "vault" / "tag_dictionary.json"
     return Path.cwd() / "vault" / "tag_dictionary.json"
 
 

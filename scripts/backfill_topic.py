@@ -5,12 +5,39 @@ from __future__ import annotations
 import argparse
 import math
 import random
+import os
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+def _project_root() -> Path:
+    if getattr(sys, "frozen", False):
+        configured = os.environ.get("AI_RESEARCH_LAB_HOME")
+        if configured:
+            return Path(configured).resolve()
+        executable_dir = Path(sys.executable).resolve().parent
+        for candidate in (executable_dir, *executable_dir.parents):
+            if (candidate / "AI Research Lab.exe").exists():
+                return candidate
+        return executable_dir
+    return Path(__file__).resolve().parent.parent
+
+
+PROJECT_ROOT = _project_root()
+
+
+def _app_data_root() -> Path:
+    if getattr(sys, "frozen", False):
+        configured = os.environ.get("AI_RESEARCH_LAB_DATA_HOME")
+        if configured:
+            return Path(configured).resolve()
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        return (Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local") / "AI Research Lab"
+    return PROJECT_ROOT
+
+
+APP_DATA_ROOT = _app_data_root()
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from research_lab.crawler.topic_news import TopicNewsCrawler
@@ -77,7 +104,7 @@ def main() -> None:
 
     try:
         from dotenv import load_dotenv
-        load_dotenv(PROJECT_ROOT / ".env")
+        load_dotenv(APP_DATA_ROOT / ".env")
     except ImportError:
         pass
 
@@ -105,7 +132,7 @@ def main() -> None:
         window_count = math.ceil(args.backfill_days * 24 / interval_hours)
     earliest = now - timedelta(days=args.backfill_days)
     profile = google_search_profile(args.output_language)
-    vault_dir = Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "vault"
+    vault_dir = Path(args.output_dir) if args.output_dir else APP_DATA_ROOT / "vault"
     data_dir = Path(args.data_dir) if args.data_dir else vault_dir
     topic_dir = data_dir / "topics" / _slugify(args.topic)
 

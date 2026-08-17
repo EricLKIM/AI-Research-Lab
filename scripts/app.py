@@ -15,19 +15,65 @@ AI Research Digest 데스크톱 GUI 앱.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import tkinter as tk
 import uuid
+import urllib.request
+import webbrowser
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk, font as tkfont
 
-PROJECT_ROOT = Path(__file__).parent.parent
+def _project_root() -> Path:
+    """Return the repository root in development or the installed app root."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+PROJECT_ROOT = _project_root()
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+
+def _app_data_root() -> Path:
+    """Return the writable per-user location for installed-app state."""
+    if not getattr(sys, "frozen", False):
+        return PROJECT_ROOT
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+    return base / "AI Research Lab"
+
+
+APP_DATA_ROOT = _app_data_root()
+
+
+def _migrate_legacy_user_data() -> None:
+    """Move state from an older installed build into the per-user data folder."""
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        APP_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    for name in (".env", "gui_settings.json", "topics_favorites.json", "vault"):
+        source = PROJECT_ROOT / name
+        destination = APP_DATA_ROOT / name
+        if not source.exists() or destination.exists():
+            continue
+        try:
+            shutil.move(str(source), str(destination))
+        except OSError:
+            # Retain the old copy if migration cannot be completed safely.
+            continue
+
+
+_migrate_legacy_user_data()
 
 from research_lab.utils.favorites import TopicFavorites  # noqa: E402
 from research_lab.digest.topic_formatter import _slugify  # noqa: E402
@@ -39,17 +85,19 @@ from research_lab.crawler.x import XCrawler  # noqa: E402
 from research_lab.crawler.youtube import YouTubeCrawler  # noqa: E402
 from research_lab.pending_backfills import pending_days  # noqa: E402
 
-SETTINGS_PATH = PROJECT_ROOT / "gui_settings.json"
-ENV_PATH = PROJECT_ROOT / ".env"
-FAVORITES_PATH = PROJECT_ROOT / "topics_favorites.json"
-DATA_VAULT_DIR = PROJECT_ROOT / "vault"
+SETTINGS_PATH = APP_DATA_ROOT / "gui_settings.json"
+ENV_PATH = APP_DATA_ROOT / ".env"
+FAVORITES_PATH = APP_DATA_ROOT / "topics_favorites.json"
+DATA_VAULT_DIR = APP_DATA_ROOT / "vault"
+APP_VERSION = "0.2.0-pre.2"
+RELEASES_API_URL = "https://api.github.com/repos/EricLKIM/AI-Research-Lab/releases?per_page=20"
 
 MODEL_PRESETS = ["gpt-5.4-nano", "gpt-5.4-mini", "gpt-4.1-nano"]
 EXPORT_FORMAT_CHOICES = ["obsidian", "markdown", "text", "json", "html", "docx"]
 
 DEFAULT_SETTINGS = {
     "vault_name": "vault",
-    "vault_path": str(PROJECT_ROOT / "vault"),
+    "vault_path": str(APP_DATA_ROOT / "vault"),
     "model": "gpt-5.4-nano",
     "api_base": "",
     "export_format": "obsidian",
@@ -479,18 +527,41 @@ class PipelineRunner:
         # app.py itself is launched inside uv's managed virtual environment.
         # Reusing the exact interpreter that launched this GUI is more reliable
         # than starting a second nested `uv run` process.
-        python_exe = sys.executable
-        if not python_exe or not Path(python_exe).exists():
-            self.log_queue.put(("line", "Python interpreter not found.\n"))
-            self.log_queue.put(("done", -1))
-            return
-        # -u makes child progress lines visible in the GUI immediately.
-        cmd = [python_exe, "-u", *args]
+        if getattr(sys, "frozen", False):
+            pipeline_names = {
+                "research_digest.py": ("research_digest", "AI Research Digest.exe"),
+                "topic_digest.py": ("topic_digest", "Topic Research.exe"),
+                "backfill_gdelt_dump.py": ("backfill_gdelt_dump", "GDELT Dump Backfill.exe"),
+                "analysis.py": ("analysis", "Trend Analysis.exe"),
+            }
+            pipeline = pipeline_names.get(Path(args[0]).name)
+            if pipeline is None:
+                self.log_queue.put(("line", f"Packaged pipeline is not registered: {args[0]}\n"))
+                self.log_queue.put(("done", -1))
+                return
+            executable = PROJECT_ROOT / "pipelines" / pipeline[0] / pipeline[1]
+            if not executable.exists():
+                self.log_queue.put(("line", f"Packaged pipeline was not found: {executable}\n"))
+                self.log_queue.put(("done", -1))
+                return
+            cmd = [str(executable), *args[1:]]
+        else:
+            python_exe = sys.executable
+            if not python_exe or not Path(python_exe).exists():
+                self.log_queue.put(("line", "Python interpreter not found.\n"))
+                self.log_queue.put(("done", -1))
+                return
+            # -u makes child progress lines visible in the GUI immediately.
+            cmd = [python_exe, "-u", *args]
         self.log_queue.put(("line", f"$ {' '.join(cmd)}\n"))
         try:
+            child_env = os.environ.copy()
+            child_env["AI_RESEARCH_LAB_HOME"] = str(PROJECT_ROOT)
+            child_env["AI_RESEARCH_LAB_DATA_HOME"] = str(APP_DATA_ROOT)
             self._proc = subprocess.Popen(
                 cmd,
                 cwd=str(PROJECT_ROOT),
+                env=child_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -555,6 +626,7 @@ class App(tk.Tk):
         self._load_settings_into_widgets()
         self._refresh_favorites_list()
         self.after(100, self._poll_log_queue)
+        self.after(1200, self._check_for_updates_in_background)
 
     def t(self, key: str, **kwargs) -> str:
         return tr(self.lang, key, **kwargs)
@@ -587,6 +659,9 @@ class App(tk.Tk):
         self.status_var = tk.StringVar(value=self.t("status_idle"))
         ttk.Label(status_frame, textvariable=self.status_var).pack(side="left")
 
+        self._update_url = ""
+        self.update_btn = ttk.Button(status_frame, command=self._open_update_page)
+
         self.cancel_btn = ttk.Button(
             status_frame, text=self.t("cancel_btn"), command=self._cancel_run, state="disabled"
         )
@@ -602,6 +677,51 @@ class App(tk.Tk):
         self.log_text.configure(yscrollcommand=scroll.set)
         self.log_text.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+
+    # ── Update check ─────────────────────────────────────────────────────
+    @staticmethod
+    def _version_key(version: str) -> tuple[int, int, int, int, int]:
+        """Create a small, dependency-free ordering key for release tags."""
+        match = re.search(r"v?(\d+)\.(\d+)\.(\d+)(?:-pre\.(\d+))?", version, re.IGNORECASE)
+        if not match:
+            return (0, 0, 0, 0, 0)
+        major, minor, patch, pre = match.groups()
+        # A stable release sorts after pre-releases for the same version.
+        return (int(major), int(minor), int(patch), 1 if pre is None else 0, int(pre or 0))
+
+    def _check_for_updates_in_background(self) -> None:
+        """Check public GitHub releases without delaying the desktop UI."""
+        def worker() -> None:
+            try:
+                request = urllib.request.Request(
+                    RELEASES_API_URL,
+                    headers={"Accept": "application/vnd.github+json", "User-Agent": "AI-Research-Lab"},
+                )
+                with urllib.request.urlopen(request, timeout=4) as response:
+                    releases = json.loads(response.read().decode("utf-8"))
+                candidates = [release for release in releases if not release.get("draft")]
+                if not candidates:
+                    return
+                latest = max(candidates, key=lambda release: self._version_key(str(release.get("tag_name", ""))))
+                latest_tag = str(latest.get("tag_name", ""))
+                if self._version_key(latest_tag) <= self._version_key(APP_VERSION):
+                    return
+                self.after(0, lambda: self._show_update_available(latest_tag, str(latest.get("html_url", ""))))
+            except Exception:
+                # Network failures must never affect startup or collection work.
+                return
+
+        threading.Thread(target=worker, daemon=True, name="release-update-check").start()
+
+    def _show_update_available(self, version: str, url: str) -> None:
+        self._update_url = url
+        label = f"Update available: {version}" if self.lang != "ko" else f"새 버전 사용 가능: {version}"
+        self.update_btn.configure(text=label)
+        self.update_btn.pack(side="left", padx=(12, 0))
+
+    def _open_update_page(self) -> None:
+        if self._update_url:
+            webbrowser.open(self._update_url)
 
     def _build_digest_tab(self) -> None:
         f = self.tab_digest

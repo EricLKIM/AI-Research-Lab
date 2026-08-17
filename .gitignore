@@ -16,6 +16,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+/installer/
 
 # Test, log, and temporary artifacts
 .pytest_cache/

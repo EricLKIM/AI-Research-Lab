@@ -1,8 +1,8 @@
 # AI Research Lab
 
-AI Research Lab is a local, Windows-first research notebook for following a topic over time. It collects recent articles, keeps the raw collection history in a local vault, and writes readable Markdown notes for Obsidian or any ordinary folder.
+AI Research Lab is a local-first, Windows research workspace for following a topic over time. It collects recent articles, keeps the collection history in a local vault, and writes readable Markdown notes for Obsidian or any ordinary folder.
 
-The project is useful when a single search result is not enough: you want to see what has changed, where the material came from, and whether a claim is supported by more than one source.
+Unlike a one-off search summary, the project is built to retain evidence over time: what changed, where material came from, how diverse the coverage is, and whether a claim has support from more than one source.
 
 [Windows releases](https://github.com/EricLKIM/AI-Research-Lab/releases/latest)
 
@@ -18,6 +18,20 @@ The project is useful when a single search result is not enough: you want to see
 - Saves human-readable notes outside the machine-data vault if you prefer.
 
 The application treats rumors and community posts as signals to investigate, not as established facts.
+
+## Quick start: Windows installer
+
+Download the latest Windows installer from [Releases](https://github.com/EricLKIM/AI-Research-Lab/releases/latest), then run it.
+
+On a first installation, Setup asks for:
+
+- an OpenAI-compatible API key (optional until you run GPT-assisted work);
+- an API base URL (optional; leave blank for the default OpenAI endpoint); and
+- the folder where Obsidian-compatible Markdown notes should be written.
+
+The installer language becomes the initial app and output language. API keys, app settings, and machine-readable collection data are stored per user, outside the application folder. Later installer updates preserve those settings; change them from the app when needed.
+
+The installed app checks GitHub Releases in the background at startup. It shows an update button only when a newer release is available.
 
 ## A typical workflow
 
@@ -41,7 +55,7 @@ The app does not run GPT trend analysis automatically. Scheduled collection is s
 
 ## Installation
 
-### Requirements
+### Run from source
 
 - Windows
 - Python 3.11 or newer
@@ -73,15 +87,27 @@ run_app.bat
 
 `diagnose_gui.bat` is available when the desktop app does not start. The repository also includes `run_topic_digest.bat` and `run_digest.bat` for the older command-line entry points.
 
+### Windows release build
+
+The release installer packages a folder of dedicated executables: the GUI plus the Topic Research, Backfill, Analysis, and scheduled-collection pipelines. Personal settings, API keys, and the vault are excluded.
+
+```powershell
+.\build_release.ps1
+```
+
+Then open `setup.iss` in Inno Setup and compile it. The installer is written to `installer\AI-Research-Lab-Setup-<version>.exe`; upload that `.exe` as the asset of a GitHub Release. Do not upload `setup.iss` itself as the downloadable application.
+
 ## Data and output locations
 
 The app keeps machine-readable state separate from notes intended for reading.
 
 | Content | Default location | Purpose |
 |---|---|---|
-| Snapshots, analysis state, tags, pending backfill work | `D:\ai-research-lab\vault` | Local machine data; not committed to Git |
+| Snapshots, analysis state, tags, pending backfill work | Source checkout: `D:\ai-research-lab\vault`; installed app: `%LOCALAPPDATA%\AI Research Lab\vault` | Local machine data; not committed to Git |
 | Markdown notes | Chosen in Settings, for example `C:\Users\<you>\Desktop\AI_research` | Obsidian or ordinary Markdown output |
 | Optional raw GDELT dump cache | `vault\gdelt-cache` | Reusable local source archives |
+
+The installed app keeps API keys, settings, favorites, and internal data under `%LOCALAPPDATA%\AI Research Lab`, outside the program folder. API keys are stored locally in `.env` as plain text, so use a device account you trust and do not share this folder.
 
 The initialization helper clears only generated research data while preserving API keys, GUI settings, favorites, and `.obsidian` configuration:
 
