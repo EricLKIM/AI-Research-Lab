@@ -45,7 +45,7 @@ The app does not run GPT trend analysis automatically. Scheduled collection is s
 
 ## Sample vault (no API key)
 
-The repository includes a small [sample vault](sample_vault/) with synthetic snapshots, a seven-day baseline, and a trend-analysis note. It is useful for seeing the local file layout and Obsidian output before configuring any credentials.
+The repository includes a small [sample vault](sample_vault/) with synthetic snapshots, a seven-day baseline, and a trend-analysis note. It is useful for seeing the local file layout and Obsidian output before configuring any credentials. On first launch, the app temporarily turns Topic Research into a no-API `Sample` walkthrough. It creates disposable `.txt` example results in the connected Obsidian vault when available, or in a separate per-user Sample Vault otherwise. Restart it from **Settings → Restart Sample tutorial**.
 
 Open the Markdown files under `sample_vault/markdown/` directly, or copy the contents of `sample_vault/vault/` into a separate empty data vault to inspect the saved time-series inputs. The sample never contains scraped content, GDELT archives, API keys, or personal settings.
 
@@ -96,7 +96,7 @@ run_app.bat
 You can verify the OpenAI-compatible endpoint integration without installing Ollama, LM Studio, or a model. The following command starts a temporary loopback-only mock server, sends both Topic Research and Trend Analysis requests to it, checks JSON parsing, and verifies Topic Research Markdown output. It does not use an API key, run inference, or contact the internet.
 
 ```powershell
-.venv\Scripts\python.exe scripts\test_local_llm_compat.py
+.venv\Scripts\python.exe scripts\verify_local_llm_compat.py
 ```
 
 For a manual GUI check, run the mock server in one terminal and set **OpenAI API Base** in Settings to the printed `http://127.0.0.1:<port>/v1` address. Restore the normal API base after the check.

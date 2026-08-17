@@ -3,7 +3,7 @@
 ; Inno Setup.  The installer packages everything under dist\AI Research Lab.
 
 #define AppName "AI Research Lab"
-#define AppVersion "0.2.0-pre.2"
+#define AppVersion "0.2.0-pre.3"
 #define AppPublisher "EricLKIM"
 #define AppURL "https://github.com/EricLKIM/AI-Research-Lab"
 #define AppExeName "AI Research Lab.exe"

@@ -76,6 +76,7 @@ Invoke-PipelineBuild -Name "Scheduled Collection" -Script "scripts\scheduled_col
 
 New-Item -ItemType Directory -Path $ReleaseRoot | Out-Null
 Copy-Item -Path (Join-Path $StageRoot "AI Research Lab\*") -Destination $ReleaseRoot -Recurse
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "sample_vault") -Destination (Join-Path $ReleaseRoot "sample_vault") -Recurse
 
 $PipelineRoot = Join-Path $ReleaseRoot "pipelines"
 New-Item -ItemType Directory -Path $PipelineRoot | Out-Null

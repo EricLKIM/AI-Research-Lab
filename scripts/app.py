@@ -44,6 +44,11 @@ def _app_data_root() -> Path:
     """Return the writable per-user location for installed-app state."""
     if not getattr(sys, "frozen", False):
         return PROJECT_ROOT
+    return _user_app_data_root()
+
+
+def _user_app_data_root() -> Path:
+    """Return the per-user application folder even during source development."""
     local_app_data = os.environ.get("LOCALAPPDATA")
     base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
     return base / "AI Research Lab"
@@ -90,6 +95,8 @@ SETTINGS_PATH = APP_DATA_ROOT / "gui_settings.json"
 ENV_PATH = APP_DATA_ROOT / ".env"
 FAVORITES_PATH = APP_DATA_ROOT / "topics_favorites.json"
 DATA_VAULT_DIR = APP_DATA_ROOT / "vault"
+SAMPLE_VAULT_SOURCE = PROJECT_ROOT / "sample_vault"
+SAMPLE_VAULT_DESTINATION = _user_app_data_root() / "sample-vault"
 APP_VERSION = "0.2.0-pre.2"
 RELEASES_API_URL = "https://api.github.com/repos/EricLKIM/AI-Research-Lab/releases?per_page=20"
 
@@ -129,6 +136,7 @@ DEFAULT_SETTINGS = {
     "analysis_alert_rising": True,
     "analysis_alert_contradictions": True,
     "analysis_alert_data_quality": True,
+    "onboarding_completed": False,
 }
 
 
@@ -221,6 +229,36 @@ STRINGS = {
         "settings_language_hint": "자유롭게 입력 가능 (예: English, 日本語, 中文). 앱 화면/파일 틀 문구는 이 값이 한국어일 때만 한국어이고, 그 외에는 항상 English로 표시됩니다. 변경 후 앱을 다시 시작해야 적용됩니다.",
         "settings_save_btn": "저장",
         "settings_saved_msg": "✅ 저장되었습니다. (언어를 바꿨다면 앱을 재시작하세요)",
+        "settings_tutorial_btn": "Sample 튜토리얼 다시 시작",
+        "onboarding_title": "AI Research Lab 시작하기",
+        "onboarding_intro": "처음 2분 안에 예시 결과를 보고 기본 흐름을 익힐 수 있습니다. Sample Vault는 개인 Vault와 API 키를 전혀 건드리지 않습니다.",
+        "onboarding_step_sample": "1. API 키 없이 Sample Vault의 스냅샷·기준선·분석 노트를 살펴봅니다.",
+        "onboarding_step_research": "2. Topic Research에서 원하는 주제를 수집합니다.",
+        "onboarding_step_analysis": "3. 데이터가 쌓이면 Analysis에서 시간 흐름과 신호 변화를 분석합니다.",
+        "onboarding_open_sample": "Sample Vault 열기",
+        "onboarding_start_research": "Sample 흐름 시작",
+        "onboarding_finish": "나중에 하기",
+        "onboarding_sample_missing": "Sample Vault 파일을 찾지 못했습니다. 설치를 다시 확인해 주세요.",
+        "onboarding_sample_error": "Sample Vault를 준비하지 못했습니다:\n{error}",
+        "sample_topic_hint": "Sample 튜토리얼이 진행 중입니다. 아래 버튼은 API나 네트워크를 호출하지 않습니다.",
+        "sample_open_data": "Sample Data 보기 (API 없음)",
+        "sample_data_title": "Sample Data",
+        "sample_data_body": "번들에 포함된 합성 시계열 스냅샷입니다. 실제 기사·개인 데이터·API 키는 포함하지 않습니다.",
+        "sample_vault_title": "Sample Vault",
+        "sample_vault_body": "Sample Data는 개인 Vault와 분리된 전용 폴더에 복사되었습니다. Obsidian에서 이 폴더를 별도 Vault로 열어 구조를 살펴볼 수 있습니다.",
+        "sample_analysis_title": "Sample Analysis",
+        "sample_analysis_body": "미리 생성한 기준선 및 추세 분석 노트입니다. 실제 GPT 분석을 실행하지 않고 결과 형식을 확인할 수 있습니다.",
+        "sample_open_folder": "폴더 열기",
+        "sample_open_analysis": "분석 노트 열기",
+        "sample_next_vault": "다음: Sample Vault",
+        "sample_next_analysis": "다음: Sample Analysis",
+        "sample_finish": "튜토리얼 완료",
+        "sample_go_analysis": "Sample 분석하러 가기",
+        "sample_run_analysis": "Sample 분석 실행 (API 없음)",
+        "sample_vault_created_title": "Sample Vault 생성됨",
+        "sample_vault_created_body": "API 호출 없이 예시 Topic Research 결과를 만들었습니다. Obsidian Vault가 연결되어 있으면 그 안에, 아니면 별도 Sample Vault에 저장되었습니다. 상단의 ‘Sample 분석하러 가기’를 눌러 다음 단계로 이동하세요.",
+        "sample_analysis_ready_title": "Sample Analysis",
+        "sample_analysis_ready_body": "Sample 주제와 예시 분석 실행 버튼이 준비되었습니다. 실행해도 API나 네트워크를 호출하지 않습니다.",
         "threshold_left_label": "정확도 중심",
         "threshold_right_label": "신규성·가십 허용",
         "threshold_off": "신뢰성 평가가 꺼져 있습니다.",
@@ -329,6 +367,36 @@ STRINGS = {
         "settings_language_hint": "Type any language (e.g. English, 日本語, 中文). The app UI and file template text stay Korean only when this is Korean; otherwise they're always in English. Restart the app after changing this.",
         "settings_save_btn": "Save",
         "settings_saved_msg": "✅ Saved. (Restart the app if you changed the language)",
+        "settings_tutorial_btn": "Restart Sample tutorial",
+        "onboarding_title": "Welcome to AI Research Lab",
+        "onboarding_intro": "See an example result and learn the core workflow in about two minutes. The Sample Vault never changes your personal vault or API key.",
+        "onboarding_step_sample": "1. Explore example snapshots, a baseline, and an analysis note without an API key.",
+        "onboarding_step_research": "2. Use Topic Research to collect a topic you care about.",
+        "onboarding_step_analysis": "3. When data accumulates, use Analysis to examine changes over time and emerging signals.",
+        "onboarding_open_sample": "Open Sample Vault",
+        "onboarding_start_research": "Start Sample walkthrough",
+        "onboarding_finish": "Not now",
+        "onboarding_sample_missing": "The Sample Vault files could not be found. Please check the installation.",
+        "onboarding_sample_error": "Could not prepare the Sample Vault:\n{error}",
+        "sample_topic_hint": "The Sample tutorial is active. The button below makes no API or network calls.",
+        "sample_open_data": "View Sample Data (no API)",
+        "sample_data_title": "Sample Data",
+        "sample_data_body": "These are bundled synthetic time-series snapshots. They contain no scraped articles, personal data, or API keys.",
+        "sample_vault_title": "Sample Vault",
+        "sample_vault_body": "Sample Data was copied into a dedicated folder, separate from your personal vault. You can open this folder as a separate Obsidian vault to inspect its layout.",
+        "sample_analysis_title": "Sample Analysis",
+        "sample_analysis_body": "These pre-generated baseline and trend-analysis notes show the result format without running GPT analysis.",
+        "sample_open_folder": "Open folder",
+        "sample_open_analysis": "Open analysis note",
+        "sample_next_vault": "Next: Sample Vault",
+        "sample_next_analysis": "Next: Sample Analysis",
+        "sample_finish": "Finish tutorial",
+        "sample_go_analysis": "Go to Sample Analysis",
+        "sample_run_analysis": "Run Sample Analysis (no API)",
+        "sample_vault_created_title": "Sample Vault created",
+        "sample_vault_created_body": "An example Topic Research result was prepared without an API call. It was saved in your connected Obsidian vault when available; otherwise it is in the separate Sample Vault. Click ‘Go to Sample Analysis’ above for the next step.",
+        "sample_analysis_ready_title": "Sample Analysis",
+        "sample_analysis_ready_body": "The Sample topic and example analysis button are ready. Running it makes no API or network calls.",
         "threshold_left_label": "Favor accuracy",
         "threshold_right_label": "Allow novelty/gossip",
         "threshold_off": "Credibility scoring is turned off.",
@@ -633,6 +701,7 @@ class App(tk.Tk):
         self._refresh_favorites_list()
         self.after(100, self._poll_log_queue)
         self.after(1200, self._check_for_updates_in_background)
+        self.after(450, self._maybe_show_onboarding)
 
     def t(self, key: str, **kwargs) -> str:
         return tr(self.lang, key, **kwargs)
@@ -685,6 +754,8 @@ class App(tk.Tk):
     def _on_notebook_tab_changed(self, _event=None) -> None:
         """Hide execution controls while the user is editing settings."""
         selected = self.notebook.nametowidget(self.notebook.select())
+        if selected is self.tab_analysis and getattr(self, "_sample_walkthrough_active", False):
+            self._activate_sample_analysis()
         show_execution = selected not in {self.tab_settings, self.tab_advanced}
         if show_execution:
             self.notebook.pack_configure(expand=False)
@@ -782,6 +853,10 @@ class App(tk.Tk):
 
         self.topic_run_btn = ttk.Button(f, text=self.t("topic_run_btn"), command=self._on_run_topic)
         self.topic_run_btn.grid(row=7, column=0, sticky="w", padx=12, pady=16)
+        self.sample_topic_hint_var = tk.StringVar(value="")
+        ttk.Label(f, textvariable=self.sample_topic_hint_var, foreground="#356a9a", wraplength=680).grid(
+            row=8, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 12)
+        )
 
     def _build_analysis_tab(self) -> None:
         f = self.tab_analysis
@@ -972,6 +1047,9 @@ class App(tk.Tk):
         )
         ttk.Button(f, text=self.t("settings_save_btn"), command=self._on_save_settings).grid(
             row=26, column=1, sticky="w", padx=12, pady=(4, 12)
+        )
+        ttk.Button(f, text=self.t("settings_tutorial_btn"), command=self._show_onboarding).grid(
+            row=27, column=1, sticky="w", padx=12, pady=(0, 12)
         )
 
     def _build_advanced_settings_tab(self) -> None:
@@ -1497,6 +1575,135 @@ class App(tk.Tk):
         self.tag_aliases_var.set(", ".join(dictionary.get("aliases", {}).get(canonical, [])))
         self.tag_parents_var.set(", ".join(dictionary.get("parents", {}).get(canonical, [])))
 
+    # ── First-run tutorial ────────────────────────────────────────────────
+    def _maybe_show_onboarding(self) -> None:
+        if not bool(self.settings.get("onboarding_completed", False)):
+            self._show_onboarding()
+
+    def _prepare_sample_vault(self) -> Path | None:
+        if not SAMPLE_VAULT_SOURCE.is_dir():
+            messagebox.showerror(self.t("onboarding_title"), self.t("onboarding_sample_missing"))
+            return None
+        try:
+            shutil.copytree(SAMPLE_VAULT_SOURCE, SAMPLE_VAULT_DESTINATION, dirs_exist_ok=True)
+        except OSError as error:
+            messagebox.showerror(
+                self.t("onboarding_title"), self.t("onboarding_sample_error", error=error)
+            )
+            return None
+        return SAMPLE_VAULT_DESTINATION / "markdown"
+
+    def _open_local_folder(self, folder: Path) -> None:
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(folder))
+            else:
+                webbrowser.open(folder.as_uri())
+        except OSError as error:
+            messagebox.showerror(
+                self.t("onboarding_title"), self.t("onboarding_sample_error", error=error)
+            )
+
+    def _start_sample_walkthrough(self) -> None:
+        self._sample_walkthrough_active = True
+        self._sample_walkthrough_stage = "data"
+        self.topic_var.set("Sample")
+        self.save_favorite_var.set(False)
+        self.sample_topic_hint_var.set(self.t("sample_topic_hint"))
+        self.topic_run_btn.configure(text=self.t("sample_open_data"))
+        self.notebook.select(self.tab_topic)
+
+    def _sample_tutorial_directory(self) -> Path:
+        configured_vault = Path(self.vault_path_var.get().strip())
+        if (configured_vault / ".obsidian").is_dir():
+            root = configured_vault
+        else:
+            root = SAMPLE_VAULT_DESTINATION / "markdown"
+        folder_name = "Sample - 삭제바람" if self.lang == "ko" else "Sample - Delete After Tutorial"
+        return root / folder_name
+
+    def _write_sample_tutorial_files(self) -> tuple[Path, Path]:
+        sample_dir = self._sample_tutorial_directory()
+        sample_dir.mkdir(parents=True, exist_ok=True)
+        topic_file = sample_dir / "01 Topic Research.txt"
+        analysis_file = sample_dir / "02 Trend Analysis.txt"
+        if self.lang == "ko":
+            topic_text = (
+                "Sample Topic Research (API 없음)\n\n"
+                "이 파일은 튜토리얼용 합성 예시입니다.\n"
+                "- 최근 AI 관련 시계열 스냅샷 4개\n"
+                "- 기준선 및 출처 분산 예시\n"
+                "- 실제 기사, 개인 데이터, API 키는 포함하지 않음\n"
+            )
+            analysis_text = (
+                "Sample Trend Analysis (API 없음)\n\n"
+                "Confirmed Trend: AI 인프라 투자 확대\n"
+                "Emerging Signal: 모델 운영 비용 최적화\n"
+                "Rumor: 검증되지 않은 제품 출시 주장\n\n"
+                "이 결과는 번들 예시이며 GPT 분석을 실행하지 않았습니다.\n"
+            )
+        else:
+            topic_text = (
+                "Sample Topic Research (no API)\n\n"
+                "This is a synthetic tutorial example.\n"
+                "- Four recent AI time-series snapshots\n"
+                "- Example baseline and source distribution\n"
+                "- No scraped articles, personal data, or API keys\n"
+            )
+            analysis_text = (
+                "Sample Trend Analysis (no API)\n\n"
+                "Confirmed Trend: expanding AI infrastructure investment\n"
+                "Emerging Signal: optimization of model operating costs\n"
+                "Rumor: unverified product-launch claims\n\n"
+                "This is a bundled example and did not run GPT analysis.\n"
+            )
+        topic_file.write_text(topic_text, encoding="utf-8")
+        analysis_file.write_text(analysis_text, encoding="utf-8")
+        return topic_file, analysis_file
+
+    def _finish_sample_walkthrough(self) -> None:
+        self._sample_walkthrough_active = False
+        self._sample_walkthrough_stage = ""
+        self.topic_var.set("")
+        self.sample_topic_hint_var.set("")
+        self.topic_run_btn.configure(text=self.t("topic_run_btn"))
+
+        self.notebook.tab(self.tab_analysis, text=self.t("tab_analysis"))
+        self.analysis_topic_var.set("")
+        self.analysis_run_btn.configure(text=self.t("analysis_run_btn"))
+
+    def _run_sample_topic_research(self) -> None:
+        if self._prepare_sample_vault() is None:
+            return
+        self._write_sample_tutorial_files()
+        self._sample_walkthrough_stage = "vault_ready"
+        self.notebook.tab(self.tab_analysis, text=self.t("sample_go_analysis"))
+        messagebox.showinfo(self.t("sample_vault_created_title"), self.t("sample_vault_created_body"))
+
+    def _activate_sample_analysis(self) -> None:
+        if getattr(self, "_sample_walkthrough_stage", "") != "vault_ready":
+            return
+        self._sample_walkthrough_stage = "analysis_ready"
+        self.analysis_topic_var.set("Sample")
+        values = list(self.analysis_topic_combo.cget("values"))
+        if "Sample" not in values:
+            values.append("Sample")
+            self.analysis_topic_combo.configure(values=values)
+        self.analysis_run_btn.configure(text=self.t("sample_run_analysis"))
+
+    def _run_sample_analysis(self) -> None:
+        if self._prepare_sample_vault() is None:
+            return
+        _, analysis_file = self._write_sample_tutorial_files()
+        self._open_local_folder(analysis_file)
+        self._finish_sample_walkthrough()
+
+    def _show_onboarding(self) -> None:
+        """Start the one-time tutorial by changing the existing workflow controls."""
+        self.settings["onboarding_completed"] = True
+        save_settings(self.settings)
+        self._start_sample_walkthrough()
+
     # ── Settings-tab events ───────────────────────────────────────────────
     def _on_browse_vault(self) -> None:
         chosen = filedialog.askdirectory(
@@ -1655,6 +1862,7 @@ class App(tk.Tk):
             "analysis_alert_rising": bool(self.analysis_alert_rising_var.get()),
             "analysis_alert_contradictions": bool(self.analysis_alert_contradictions_var.get()),
             "analysis_alert_data_quality": bool(self.analysis_alert_data_quality_var.get()),
+            "onboarding_completed": bool(self.settings.get("onboarding_completed", False)),
         }
         save_settings(self.settings)
 
@@ -1852,6 +2060,9 @@ class App(tk.Tk):
 
     # ── Run Topic Research tab ────────────────────────────────────────────
     def _on_run_topic(self) -> None:
+        if getattr(self, "_sample_walkthrough_active", False):
+            self._run_sample_topic_research()
+            return
         if not self._guard_before_run():
             return
         topic = self.topic_var.get().strip()
@@ -1980,6 +2191,13 @@ class App(tk.Tk):
 
     # ── Run Analysis tab ──────────────────────────────────────────────────
     def _on_run_analysis(self) -> None:
+        if (
+            getattr(self, "_sample_walkthrough_active", False)
+            and getattr(self, "_sample_walkthrough_stage", "") == "analysis_ready"
+            and self.analysis_topic_var.get().strip() == "Sample"
+        ):
+            self._run_sample_analysis()
+            return
         if not self._guard_before_run():
             return
         topic = self.analysis_topic_var.get().strip()
